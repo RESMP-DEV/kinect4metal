@@ -36,7 +36,12 @@ FIND_PATH(GLFW3_INCLUDE_DIRS
 
 # directories in the official binary package
 IF(MINGW)
-  SET(_SUFFIX lib-mingw-w64)
+  # Detect 32-bit vs 64-bit MINGW for correct GLFW package suffix
+  IF(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    SET(_SUFFIX lib-mingw-w64)
+  ELSE()
+    SET(_SUFFIX lib-mingw)
+  ENDIF()
 ELSEIF(MSVC_VERSION GREATER_EQUAL 1930)
   SET(_SUFFIX lib-vc2022)
 ELSEIF(MSVC_VERSION GREATER_EQUAL 1920)
