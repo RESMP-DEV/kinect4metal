@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # Build libusb from source
 # This is typically not needed on modern Linux systems where
