@@ -10,7 +10,8 @@ FIND_PATH(TurboJPEG_INCLUDE_DIRS
   PATHS
     "${DEPENDS_DIR}/libjpeg_turbo"
     "${DEPENDS_DIR}/libjpeg-turbo64"
-    "/usr/local/opt/jpeg-turbo" # homebrew
+    "/usr/local/opt/jpeg-turbo" # homebrew (Intel)
+    "/opt/homebrew/opt/jpeg-turbo" # homebrew (Apple Silicon)
     "/opt/local" # macports
     "C:/libjpeg-turbo64"
     "/opt/libjpeg-turbo"
@@ -19,16 +20,18 @@ FIND_PATH(TurboJPEG_INCLUDE_DIRS
     include
 )
 
-#Library names:
-# debian sid,strech: libturbojpeg0
-# debian/ubuntu else: libturbojpeg1-dev #provided by libjpeg-turbo8-dev (ubuntu)
+# Library names by distribution:
+# Ubuntu 17.10+ / Debian 9+: libturbojpeg0-dev provides libturbojpeg.so.0
+# Ubuntu 24.04: libturbojpeg0-dev (libturbojpeg.so.0)
+# Older Ubuntu (14.04-16.04): libjpeg-turbo8-dev provides libturbojpeg.so.1
 FIND_LIBRARY(TurboJPEG_LIBRARIES
-  NAMES libturbojpeg.so.1 libturbojpeg.so.0 turbojpeg
+  NAMES turbojpeg libturbojpeg.so.0 libturbojpeg.so.1
   DOC "Found TurboJPEG library path"
   PATHS
     "${DEPENDS_DIR}/libjpeg_turbo"
     "${DEPENDS_DIR}/libjpeg-turbo64"
-    "/usr/local/opt/jpeg-turbo" # homebrew
+    "/usr/local/opt/jpeg-turbo" # homebrew (Intel)
+    "/opt/homebrew/opt/jpeg-turbo" # homebrew (Apple Silicon)
     "/opt/local" # macports
     "C:/libjpeg-turbo64"
     "/opt/libjpeg-turbo"
@@ -36,6 +39,8 @@ FIND_LIBRARY(TurboJPEG_LIBRARIES
   PATH_SUFFIXES
     lib
     lib64
+    lib/x86_64-linux-gnu  # Ubuntu/Debian multiarch
+    lib/aarch64-linux-gnu # ARM64 multiarch
 )
 
 IF(WIN32)

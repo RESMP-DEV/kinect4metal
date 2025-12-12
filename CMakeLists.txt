@@ -1,8 +1,8 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12.1)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.10)
 
 SET(PROJECT_VER_MAJOR 0)
 SET(PROJECT_VER_MINOR 2)
-SET(PROJECT_VER_PATCH 0)
+SET(PROJECT_VER_PATCH 1)
 SET(PROJECT_VER "${PROJECT_VER_MAJOR}.${PROJECT_VER_MINOR}.${PROJECT_VER_PATCH}")
 SET(PROJECT_APIVER "${PROJECT_VER_MAJOR}.${PROJECT_VER_MINOR}")
 
@@ -24,9 +24,8 @@ ENDIF()
 
 PROJECT(libfreenect2)
 
-IF(POLICY CMP0042)
-  cmake_policy(SET CMP0042 NEW)
-ENDIF()
+# Modern CMake policies
+cmake_policy(SET CMP0042 NEW)  # MACOSX_RPATH enabled by default
 
 SET(MY_DIR ${libfreenect2_SOURCE_DIR})
 SET(DEPENDS_DIR "${MY_DIR}/depends" CACHE STRING "dependency directory must be set to 'false' if external deps are used")
@@ -34,7 +33,6 @@ SET(DEPENDS_DIR "${MY_DIR}/depends" CACHE STRING "dependency directory must be s
 OPTION(BUILD_SHARED_LIBS "Build shared (ON) or static (OFF) libraries" ON)
 OPTION(BUILD_EXAMPLES "Build examples" ON)
 OPTION(BUILD_OPENNI2_DRIVER "Build OpenNI2 driver" ON)
-OPTION(ENABLE_CXX11 "Enable C++11 support" OFF)
 OPTION(ENABLE_OPENCL "Enable OpenCL support" ON)
 OPTION(ENABLE_CUDA "Enable CUDA support" ON)
 OPTION(ENABLE_OPENGL "Enable OpenGL support" ON)
@@ -46,6 +44,15 @@ IF(ENABLE_PROFILING)
   SET(LIBFREENECT2_WITH_PROFILING 1)
 ENDIF()
 
+# Modern C++ standard - require C++17 (available on all modern compilers)
+SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD_REQUIRED ON)
+SET(CMAKE_CXX_EXTENSIONS OFF)
+SET(LIBFREENECT2_WITH_CXX11_SUPPORT 1)
+SET(HAVE_CXX11 yes)
+# Also set flags for checks in threading setup
+SET(COMPILER_SUPPORTS_CXX11 ON)
+
 IF(MSVC)
   # suppress several "possible loss of data" warnings, and
   # "zero-length array in struct" from libusb.h
@@ -55,24 +62,6 @@ ELSE()
   # Heed warnings from non-MSVC compilers
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 ENDIF()
-
-SET(HAVE_CXX11 disabled)
-IF(ENABLE_CXX11)
-  INCLUDE(CheckCXXCompilerFlag)
-  CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
-  CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
-  IF(COMPILER_SUPPORTS_CXX11)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
-    SET(LIBFREENECT2_WITH_CXX11_SUPPORT 1)
-    SET(HAVE_CXX11 yes)
-  ELSEIF(COMPILER_SUPPORTS_CXX0X)
-    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
-    SET(HAVE_CXX11 c++0x)
-  ELSE()
-    SET(HAVE_CXX11 no)
-    MESSAGE(STATUS "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
-  ENDIF()
-ENDIF(ENABLE_CXX11)
 
 # additional cmake modules
 LIST(APPEND CMAKE_MODULE_PATH ${MY_DIR}/cmake_modules)
@@ -308,8 +297,8 @@ IF(ENABLE_OPENCL)
       INCLUDE(CheckOpenCLICDLoader)
       IF(OpenCL_C_WORKS AND NOT OpenCL_CXX_WORKS)
         SET(LIBFREENECT2_OPENCL_ICD_LOADER_IS_OLD 1)
-        SET(HAVE_OpenCL "yes but buggy")
-        MESSAGE(WARNING "Your libOpenCL.so is incompatible with CL/cl.h. Install ocl-icd-opencl-dev to update libOpenCL.so?")
+        SET(HAVE_OpenCL "yes (legacy ICD loader)")
+        MESSAGE(WARNING "Your libOpenCL.so may be incompatible with CL/cl.h. Consider installing ocl-icd-opencl-dev for better compatibility.")
       ENDIF()
     ENDIF()
     INCLUDE_DIRECTORIES(${OpenCL_INCLUDE_DIRS})
@@ -328,12 +317,10 @@ IF(ENABLE_OPENCL)
       src/opencl_kde_depth_packet_processor.cl
     )
 
-    # Major Linux distro stable releases have buggy OpenCL ICD loader.
-    # The workaround of disabling exceptions can only be set up during compile time.
-    # Diabling it for all should be harmless. The flag is the same for GCC/Clang/ICC.
-    IF(UNIX AND NOT APPLE)
-      SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
-    ENDIF()
+    # Note: The -fno-exceptions workaround for buggy OpenCL ICD loaders is no longer
+    # needed on modern Linux distributions (Ubuntu 18.04+, etc.) with ocl-icd.
+    # If you encounter OpenCL issues on older systems, you may need to add:
+    # SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
   ENDIF(OpenCL_FOUND)
 ENDIF(ENABLE_OPENCL)
 
@@ -341,46 +328,48 @@ SET(HAVE_CUDA disabled)
 IF(ENABLE_CUDA)
   FIND_PACKAGE(CUDA)
   SET(HAVE_CUDA no)
-  IF(CUDA_FOUND AND MSVC14 AND CUDA_VERSION VERSION_LESS 8.0)
-    SET(HAVE_CUDA "no (VS2015 not supported)")
-  ELSEIF(CUDA_FOUND)
-    SET(LIBFREENECT2_WITH_CUDA_SUPPORT 1)
-    SET(HAVE_CUDA yes)
+  IF(CUDA_FOUND)
+    # Require CUDA 10.0+ for modern C++ support
+    IF(CUDA_VERSION VERSION_LESS 10.0)
+      SET(HAVE_CUDA "no (CUDA 10.0+ required)")
+      MESSAGE(WARNING "CUDA ${CUDA_VERSION} found but CUDA 10.0+ is required for C++17 support")
+    ELSE()
+      SET(LIBFREENECT2_WITH_CUDA_SUPPORT 1)
+      SET(HAVE_CUDA yes)
 
-    STRING(REPLACE "\\" "/" NVCUDASAMPLES_ROOT "$ENV{NVCUDASAMPLES_ROOT}")
-    STRING(REPLACE "\\" "/" NVCUDASAMPLES8_0_ROOT "$ENV{NVCUDASAMPLES8_0_ROOT}")
-    CUDA_INCLUDE_DIRECTORIES(
-      "${MY_DIR}/include/"
-      "${CUDA_TOOLKIT_ROOT_DIR}/samples/common/inc"
-      "${NVCUDASAMPLES_ROOT}/common/inc"
-      "${NVCUDASAMPLES8_0_ROOT}/common/inc"
-    )
-    SET(CUDA_FLAGS -use_fast_math)
-    IF(NOT MSVC)
-      SET(CUDA_FLAGS "${CUDA_FLAGS} -Xcompiler -fPIC")
+      STRING(REPLACE "\\" "/" NVCUDASAMPLES_ROOT "$ENV{NVCUDASAMPLES_ROOT}")
+      CUDA_INCLUDE_DIRECTORIES(
+        "${MY_DIR}/include/"
+        "${CUDA_TOOLKIT_ROOT_DIR}/samples/common/inc"
+        "${NVCUDASAMPLES_ROOT}/common/inc"
+      )
+      SET(CUDA_FLAGS -use_fast_math)
+      IF(NOT MSVC)
+        SET(CUDA_FLAGS "${CUDA_FLAGS} -Xcompiler -fPIC")
+      ENDIF()
+      # Use C++17 for CUDA (CUDA 10.0+ supports C++14, CUDA 12.0+ fully supports C++17)
+      IF(CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
+        SET(CUDA_FLAGS "${CUDA_FLAGS} -std=c++17")
+      ELSE()
+        SET(CUDA_FLAGS "${CUDA_FLAGS} -std=c++14")
+      ENDIF()
+
+      CUDA_COMPILE(CUDA_OBJECTS
+        src/cuda_depth_packet_processor.cu
+        src/cuda_kde_depth_packet_processor.cu
+        OPTIONS ${CUDA_FLAGS}
+      )
+
+      INCLUDE_DIRECTORIES(${CUDA_INCLUDE_DIRS})
+
+      LIST(APPEND SOURCES
+        ${CUDA_OBJECTS}
+      )
+
+      LIST(APPEND LIBRARIES
+        ${CUDA_LIBRARIES}
+      )
     ENDIF()
-    IF(HAVE_CXX11 STREQUAL yes AND CUDA_VERSION VERSION_GREATER 7.0)
-      SET(CUDA_FLAGS "${CUDA_FLAGS} -std=c++11")
-    ENDIF()
-
-    SET(OLD_CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    STRING(REGEX REPLACE "-std=c\\+\\+.." "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    CUDA_COMPILE(CUDA_OBJECTS
-      src/cuda_depth_packet_processor.cu
-      src/cuda_kde_depth_packet_processor.cu
-      OPTIONS ${CUDA_FLAGS}
-    )
-    SET(CMAKE_CXX_FLAGS "${OLD_CMAKE_CXX_FLAGS}")
-
-    INCLUDE_DIRECTORIES(${CUDA_INCLUDE_DIRS})
-
-    LIST(APPEND SOURCES
-      ${CUDA_OBJECTS}
-    )
-
-    LIST(APPEND LIBRARIES
-      ${CUDA_LIBRARIES}
-    )
   ENDIF()
 ENDIF(ENABLE_CUDA)
 

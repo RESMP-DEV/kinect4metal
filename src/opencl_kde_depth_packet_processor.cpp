@@ -36,8 +36,12 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+// OpenCL backward compatibility macros for deprecated APIs
+// These are required because the code uses OpenCL 1.x/2.x APIs
 #define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #define CL_USE_DEPRECATED_OPENCL_2_0_APIS
+// Silence deprecation warnings on modern systems
+#define CL_TARGET_OPENCL_VERSION 120
 
 #ifdef LIBFREENECT2_OPENCL_ICD_LOADER_IS_OLD
 #define CL_USE_DEPRECATED_OPENCL_1_1_APIS
@@ -47,7 +51,12 @@
 #endif //CL_VERSION_1_2
 #endif //LIBFREENECT2_OPENCL_ICD_LOADER_IS_OLD
 
+// Use the modern opencl.hpp header if available (OpenCL 2.1+), fallback to cl.hpp
+#if __has_include(<CL/opencl.hpp>)
+#include <CL/opencl.hpp>
+#else
 #include <CL/cl.hpp>
+#endif
 
 #ifndef REG_OPENCL_FILE
 #define REG_OPENCL_FILE ""
