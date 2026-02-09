@@ -133,10 +133,16 @@ Metal pipeline is **required** on Apple Silicon for optimal performance:
 
 ### Multiple Sensors
 
-Each Kinect v2 requires ~3Gbps USB bandwidth:
-- Use separate USB controllers (not hub ports)
-- Thunderbolt docks with discrete USB chips work well
-- Maximum 2 sensors per Mac reliably
+Each Kinect v2 requires ~3Gbps USB bandwidth. Apple Silicon Macs have favorable USB topology:
+
+- **Thunderbolt Architecture**: Most M-series chips have independent controllers per port (not shared hubs)
+- **Thunderbolt 5**: Up to 80Gbps bidirectional — theoretical capacity for 20+ sensors per port
+- **Unified Memory**: Zero-copy potential between USB DMA and Metal textures
+
+Sensor count is limited by:
+1. Software efficiency (current bottleneck — Kinect4Metal aims to improve this)
+2. CPU/GPU processing capacity
+3. Physical USB bandwidth (rarely the limit on modern Macs)
 
 ## Contributing
 
