@@ -24,14 +24,12 @@
  * either License.
  */
 
-/** @file threading.h Threading abstraction definitions. */
+/** @file threading.h Threading abstraction using C++17 standard library. */
 
 #ifndef THREADING_H_
 #define THREADING_H_
 
 #include <libfreenect2/config.h>
-
-#ifdef LIBFREENECT2_THREADING_STDLIB
 
 #include <thread>
 #include <mutex>
@@ -60,39 +58,6 @@ using namespace std::this_thread;
 }
 
 } /* libfreenect2 */
-
-#endif
-
-#ifdef LIBFREENECT2_THREADING_TINYTHREAD
-
-#include <tinythread.h>
-
-// TODO: work around for tinythread incompatibility
-#define WAIT_CONDITION(var, mutex, lock) var.wait(mutex);
-
-namespace libfreenect2
-{
-
-typedef tthread::thread thread;
-typedef tthread::mutex mutex;
-typedef tthread::lock_guard<tthread::mutex> lock_guard;
-// TODO: this is not optimal
-typedef tthread::lock_guard<tthread::mutex> unique_lock;
-typedef tthread::condition_variable condition_variable;
-
-namespace chrono
-{
-using namespace tthread::chrono;
-}
-
-namespace this_thread
-{
-using namespace tthread::this_thread;
-}
-
-} /* libfreenect2 */
-
-#endif
 
 #if defined(__linux__)
 #include <sys/prctl.h>
