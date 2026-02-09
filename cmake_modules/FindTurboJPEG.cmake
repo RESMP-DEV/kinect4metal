@@ -4,14 +4,21 @@
 # - TurboJPEG_INCLUDE_DIRS
 # - TurboJPEG_LIBRARIES
 
+IF(APPLE)
+  SET(TurboJPEG_HINTS
+    "/opt/homebrew/opt/jpeg-turbo"
+    "/usr/local/opt/jpeg-turbo"
+  )
+ENDIF()
+
 FIND_PATH(TurboJPEG_INCLUDE_DIRS
   turbojpeg.h
   DOC "Found TurboJPEG include directory"
+  HINTS
+    ${TurboJPEG_HINTS}
   PATHS
     "${DEPENDS_DIR}/libjpeg_turbo"
     "${DEPENDS_DIR}/libjpeg-turbo64"
-    "/usr/local/opt/jpeg-turbo" # homebrew (Intel)
-    "/opt/homebrew/opt/jpeg-turbo" # homebrew (Apple Silicon)
     "/opt/local" # macports
     "C:/libjpeg-turbo64"
     "/opt/libjpeg-turbo"
@@ -27,11 +34,11 @@ FIND_PATH(TurboJPEG_INCLUDE_DIRS
 FIND_LIBRARY(TurboJPEG_LIBRARIES
   NAMES turbojpeg libturbojpeg.so.0 libturbojpeg.so.1
   DOC "Found TurboJPEG library path"
+  HINTS
+    ${TurboJPEG_HINTS}
   PATHS
     "${DEPENDS_DIR}/libjpeg_turbo"
     "${DEPENDS_DIR}/libjpeg-turbo64"
-    "/usr/local/opt/jpeg-turbo" # homebrew (Intel)
-    "/opt/homebrew/opt/jpeg-turbo" # homebrew (Apple Silicon)
     "/opt/local" # macports
     "C:/libjpeg-turbo64"
     "/opt/libjpeg-turbo"

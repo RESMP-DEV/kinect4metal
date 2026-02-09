@@ -1,0 +1,277 @@
+# yaml-language-server: $schema=
+# Phase 2: Metal Compute & Depth Processing
+# Native Apple GPU support for depth packet processing
+
+tasks:
+  # ============================================================================
+  # METAL COMPUTE SHADER INFRASTRUCTURE
+  # ============================================================================
+
+  - name: create-metal-shader-dir
+    prompt: |
+      Create Metal shader source directory:
+
+      ```bash
+      mkdir -p contrib/kinect4metal/src/metal
+      ```
+    priority: P1
+    dependencies: [cmake-macos-only]
+    verify_command: test -d contrib/kinect4metal/src/metal
+
+  - name: metal-depth-shader
+    prompt: |
+      Create `contrib/kinect4metal/src/metal/depth_processing.metal` - the Metal compute shader
+      for depth packet processing.
+
+      Port the OpenCL kernel from `src/opencl_depth_packet_processor.cl` to Metal.
+
+      Key functions to implement:
+      1. `processPixelStage1` - Phase unwrapping and initial filtering
+      2. `processPixelStage2` - Depth calculation from phase
+      3. `filterPixelStage1` - Bilateral filtering pass 1
+      4. `filterPixelStage2` - Edge-aware filtering pass 2
+
+      Use Metal's:
+      - `kernel` functions with `[[kernel]]` attribute
+      - `device` buffer pointers
+      - `threadgroup` for shared memory
+      - `thread_position_in_grid` for indexing
+
+      Reference the OpenCL implementation but use Metal-native types:
+      - float4 for vector operations
+      - metal::fast namespace for fast math
+      - threadgroup_barrier() for synchronization
+    priority: P1
+    dependencies: [create-metal-shader-dir]
+    verify_command: test -f contrib/kinect4metal/src/metal/depth_processing.metal
+
+  - name: metal-depth-processor-header
+    prompt: |
+      Create `contrib/kinect4metal/include/internal/libfreenect2/metal_depth_packet_processor.h`:
+
+      ```cpp
+      #ifndef LIBFREENECT2_METAL_DEPTH_PACKET_PROCESSOR_H
+      #define LIBFREENECT2_METAL_DEPTH_PACKET_PROCESSOR_H
+
+      #include <libfreenect2/depth_packet_processor.h>
+
+      namespace kinect4metal {
+
+      class MetalDepthPacketProcessorImpl;
+
+      class MetalDepthPacketProcessor : public DepthPacketProcessor {
+      public:
+        MetalDepthPacketProcessor(int deviceId = -1);
+        virtual ~MetalDepthPacketProcessor();
+        
+        virtual void setConfiguration(const libfreenect2::Freenect2Device::Config &config);
+        virtual void loadP0TablesFromCommandResponse(unsigned char *buffer, size_t buffer_length);
+        virtual void loadXZTables(const float *xtable, const float *ztable);
+        virtual void loadLookupTable(const short *lut);
+        virtual bool ready();
+        virtual void process(const DepthPacket &packet);
+        
+      private:
+        MetalDepthPacketProcessorImpl *impl_;
+      };
+
+      } // namespace libfreenect2
+
+      #endif
+      ```
+    priority: P1
+    dependencies: [metal-depth-shader]
+    verify_command: test -f contrib/kinect4metal/include/internal/libfreenect2/metal_depth_packet_processor.h
+
+  - name: metal-depth-processor-impl
+    prompt: |
+      Create `contrib/kinect4metal/src/metal_depth_packet_processor.mm` - Objective-C++ implementation.
+
+      Implement MetalDepthPacketProcessor using:
+      1. `MTLDevice` - acquire default GPU device
+      2. `MTLCommandQueue` - for command submission
+      3. `MTLBuffer` - for depth data, p0 tables, x/z tables, LUT
+      4. `MTLComputePipelineState` - compiled compute kernels
+      5. `MTLLibrary` - load compiled Metal shaders
+
+      Key methods:
+      - Constructor: Create device, queue, load shader library, create pipeline states
+      - loadP0TablesFromCommandResponse: Upload p0 tables to GPU buffer
+      - loadXZTables: Upload x/z tables to GPU buffer  
+      - loadLookupTable: Upload LUT to GPU buffer
+      - process: Encode compute commands, dispatch kernels, wait for completion
+
+      Use autoreleasepool blocks appropriately and handle MTLBuffer with storage mode:
+      - MTLStorageModeShared for CPU/GPU shared data
+      - MTLResourceStorageModePrivate for GPU-only data
+
+      Include proper Objective-C memory management with ARC.
+    priority: P1
+    dependencies: [metal-depth-processor-header]
+    verify_command: test -f contrib/kinect4metal/src/metal_depth_packet_processor.mm
+
+  - name: cmake-metal-integration
+    prompt: |
+      Add Metal support to `contrib/kinect4metal/CMakeLists.txt`.
+
+      Add after the OpenCL section:
+      ```cmake
+      SET(HAVE_Metal disabled)
+      IF(ENABLE_METAL AND APPLE)
+        FIND_LIBRARY(METAL_LIBRARY Metal)
+        FIND_LIBRARY(METALKIT_LIBRARY MetalKit)
+        
+        SET(HAVE_Metal no)
+        IF(METAL_LIBRARY AND METALKIT_LIBRARY)
+          SET(LIBFREENECT2_WITH_METAL_SUPPORT 1)
+          SET(HAVE_Metal yes)
+          
+          LIST(APPEND SOURCES
+            src/metal_depth_packet_processor.mm
+          )
+          
+          LIST(APPEND LIBRARIES
+            ${METAL_LIBRARY}
+            ${METALKIT_LIBRARY}
+          )
+          
+          # Compile Metal shaders
+          SET(METAL_SHADER_SOURCE ${MY_DIR}/src/metal/depth_processing.metal)
+          SET(METAL_SHADER_AIR ${PROJECT_BINARY_DIR}/depth_processing.air)
+          SET(METAL_SHADER_LIB ${PROJECT_BINARY_DIR}/depth_processing.metallib)
+          
+          ADD_CUSTOM_COMMAND(
+            OUTPUT ${METAL_SHADER_AIR}
+            COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_SHADER_AIR}
+            DEPENDS ${METAL_SHADER_SOURCE}
+            COMMENT "Compiling Metal shader to AIR"
+          )
+          
+          ADD_CUSTOM_COMMAND(
+            OUTPUT ${METAL_SHADER_LIB}
+            COMMAND xcrun -sdk macosx metallib ${METAL_SHADER_AIR} -o ${METAL_SHADER_LIB}
+            DEPENDS ${METAL_SHADER_AIR}
+            COMMENT "Linking Metal shader library"
+          )
+          
+          ADD_CUSTOM_TARGET(MetalShaders DEPENDS ${METAL_SHADER_LIB})
+          ADD_DEPENDENCIES(freenect2 MetalShaders)
+          
+          INSTALL(FILES ${METAL_SHADER_LIB} DESTINATION lib)
+        ENDIF()
+      ENDIF()
+      ```
+    priority: P1
+    dependencies: [metal-depth-processor-impl]
+    verify_command: grep -q "METAL_LIBRARY Metal" contrib/kinect4metal/CMakeLists.txt
+
+  - name: metal-packet-pipeline
+    prompt: |
+      Add MetalPacketPipeline to `contrib/kinect4metal/src/packet_pipeline.cpp`.
+
+      1. Include the metal header:
+         ```cpp
+         #ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+         #include <libfreenect2/metal_depth_packet_processor.h>
+         #endif
+         ```
+
+      2. Add MetalPacketPipeline class (similar to OpenCLPacketPipeline):
+         ```cpp
+         #ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+         class MetalPacketPipeline : public BaseRgbPacketPipeline
+         {
+         public:
+           MetalPacketPipeline(int deviceId = -1);
+           virtual DepthPacketProcessor *createDepthPacketProcessor();
+         private:
+           int deviceId_;
+         };
+         
+         MetalPacketPipeline::MetalPacketPipeline(int deviceId) : deviceId_(deviceId) {}
+         
+         DepthPacketProcessor *MetalPacketPipeline::createDepthPacketProcessor()
+         {
+           return new MetalDepthPacketProcessor(deviceId_);
+         }
+         #endif
+         ```
+
+      3. Update createDefaultPacketPipeline() to prefer Metal on macOS:
+         ```cpp
+         #if defined(LIBFREENECT2_WITH_METAL_SUPPORT)
+           return new MetalPacketPipeline();
+         #elif defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
+         ```
+    priority: P1
+    dependencies: [cmake-metal-integration]
+    verify_command: grep -q "MetalPacketPipeline" contrib/kinect4metal/src/packet_pipeline.cpp
+
+  - name: metal-pipeline-header
+    prompt: |
+      Add Metal pipeline declarations to `contrib/kinect4metal/include/libfreenect2/packet_pipeline.h`.
+
+      Add around line 85 (after OpenCL declarations):
+      ```cpp
+      #ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+      /** Depth pipeline using Apple Metal compute shaders. macOS only. */
+      class LIBFREENECT2_API MetalPacketPipeline : public PacketPipeline
+      {
+      public:
+        MetalPacketPipeline(int deviceId = -1);
+        virtual ~MetalPacketPipeline();
+      };
+      #endif
+      ```
+    priority: P1
+    dependencies: [metal-packet-pipeline]
+    verify_command: grep -q "MetalPacketPipeline" contrib/kinect4metal/include/libfreenect2/packet_pipeline.h
+
+  # ============================================================================
+  # VIDEOTOOLBOX OPTIMIZATION
+  # ============================================================================
+
+  - name: vt-processor-modernize
+    prompt: |
+      Modernize `contrib/kinect4metal/src/vt_rgb_packet_processor.cpp` for current macOS APIs.
+
+      Updates needed:
+      1. Add proper error checking for VTDecompressionSessionCreate
+      2. Use VTSessionCopyProperty to query supported pixel formats
+      3. Add fallback for ProRes if JPEG decode fails
+      4. Use CVMetalTextureCache for zero-copy GPU upload (if Metal is available)
+      5. Add hardware acceleration hints:
+         ```objc
+         CFMutableDictionaryRef encoderSpecification = CFDictionaryCreateMutable(...);
+         CFDictionarySetValue(encoderSpecification, 
+           kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder,
+           kCFBooleanTrue);
+         ```
+      6. Clean up CFRelease calls with proper @autoreleasepool
+    priority: P1
+    verify_command: grep -q "kVTVideoDecoderSpecification" contrib/kinect4metal/src/vt_rgb_packet_processor.cpp || echo "Optional optimization"
+
+  # ============================================================================
+  # CONFIG HEADER UPDATE
+  # ============================================================================
+
+  - name: update-config-header
+    prompt: |
+      Update `contrib/kinect4metal/include/libfreenect2/config.h.in` to add Metal support flag.
+
+      Add after the OpenCL line:
+      ```cpp
+      #cmakedefine LIBFREENECT2_WITH_METAL_SUPPORT
+      ```
+
+      Also add a macOS-specific section:
+      ```cpp
+      /* macOS-specific features */
+      #ifdef __APPLE__
+      #cmakedefine LIBFREENECT2_WITH_VT_SUPPORT
+      #cmakedefine LIBFREENECT2_WITH_METAL_SUPPORT
+      #endif
+      ```
+    priority: P1
+    dependencies: [cmake-metal-integration]
+    verify_command: grep -q "LIBFREENECT2_WITH_METAL_SUPPORT" contrib/kinect4metal/include/libfreenect2/config.h.in

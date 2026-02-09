@@ -33,6 +33,10 @@
 #include <libfreenect2/depth_packet_stream_parser.h>
 #include <libfreenect2/protocol/response.h>
 
+#ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+#include <libfreenect2/metal_depth_packet_processor.h>
+#endif
+
 namespace libfreenect2
 {
 
@@ -40,13 +44,6 @@ static RgbPacketProcessor *getDefaultRgbPacketProcessor()
 {
 #if defined(LIBFREENECT2_WITH_VT_SUPPORT)
   return new VTRgbPacketProcessor();
-#elif defined(LIBFREENECT2_WITH_VAAPI_SUPPORT)
-  RgbPacketProcessor *vaapi = new VaapiRgbPacketProcessor();
-  if (vaapi->good())
-    return vaapi;
-  else
-    delete vaapi;
-  return new TurboJpegRgbPacketProcessor();
 #elif defined(LIBFREENECT2_WITH_TEGRAJPEG_SUPPORT)
   RgbPacketProcessor *tegra = new TegraJpegRgbPacketProcessor();
   if (tegra->good())
@@ -135,6 +132,15 @@ CpuPacketPipeline::CpuPacketPipeline()
 
 CpuPacketPipeline::~CpuPacketPipeline() { }
 
+#ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+MetalPacketPipeline::MetalPacketPipeline(const int deviceId) : deviceId(deviceId)
+{
+  comp_->initialize(getDefaultRgbPacketProcessor(), new MetalDepthPacketProcessor(deviceId));
+}
+
+MetalPacketPipeline::~MetalPacketPipeline() { }
+#endif // LIBFREENECT2_WITH_METAL_SUPPORT
+
 #ifdef LIBFREENECT2_WITH_OPENGL_SUPPORT
 OpenGLPacketPipeline::OpenGLPacketPipeline(void *parent_opengl_context, bool debug) : parent_opengl_context_(parent_opengl_context), debug_(debug)
 {
@@ -161,22 +167,6 @@ OpenCLKdePacketPipeline::OpenCLKdePacketPipeline(const int deviceId) : deviceId(
 
 OpenCLKdePacketPipeline::~OpenCLKdePacketPipeline() { }
 #endif // LIBFREENECT2_WITH_OPENCL_SUPPORT
-
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-CudaPacketPipeline::CudaPacketPipeline(const int deviceId) : deviceId(deviceId)
-{
-  comp_->initialize(getDefaultRgbPacketProcessor(), new CudaDepthPacketProcessor(deviceId));
-}
-
-CudaKdePacketPipeline::~CudaKdePacketPipeline() { }
-
-CudaKdePacketPipeline::CudaKdePacketPipeline(const int deviceId) : deviceId(deviceId)
-{
-  comp_->initialize(getDefaultRgbPacketProcessor(), new CudaKdeDepthPacketProcessor(deviceId));
-}
-
-CudaPacketPipeline::~CudaPacketPipeline() { }
-#endif // LIBFREENECT2_WITH_CUDA_SUPPORT
 
 DumpPacketPipeline::DumpPacketPipeline()
 {

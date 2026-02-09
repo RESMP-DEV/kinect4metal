@@ -29,8 +29,24 @@ IF(PKG_CONFIG_FOUND)
   RETURN()
 ENDIF()
 
+# Homebrew paths for macOS
+IF(APPLE)
+  LIST(APPEND CMAKE_PREFIX_PATH
+    "/opt/homebrew"           # Apple Silicon
+    "/usr/local"              # Intel
+  )
+  SET(LIBUSB_HINTS
+    "/opt/homebrew/lib"
+    "/opt/homebrew/include"
+    "/usr/local/lib"
+    "/usr/local/include"
+  )
+ENDIF()
+
 FIND_PATH(LibUSB_INCLUDE_DIRS
   NAMES libusb.h
+  HINTS
+    ${LIBUSB_HINTS}
   PATHS
     "${DEPENDS_DIR}/libusb"
     "${DEPENDS_DIR}/libusbx"
@@ -45,6 +61,8 @@ SET(LIBUSB_NAME libusb)
 
 FIND_LIBRARY(LibUSB_LIBRARIES
   NAMES ${LIBUSB_NAME}-1.0
+  HINTS
+    ${LIBUSB_HINTS}
   PATHS
     "${DEPENDS_DIR}/libusb"
     "${DEPENDS_DIR}/libusbx"

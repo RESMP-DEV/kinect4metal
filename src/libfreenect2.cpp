@@ -372,14 +372,6 @@ public:
     has_device_enumeration_(false),
     initialized(false)
   {
-#ifdef __linux__
-    if (libusb_get_version()->nano < 10952)
-    {
-      LOG_ERROR << "Your libusb does not support large iso buffer!";
-      return;
-    }
-#endif
-
     if(managed_usb_context_)
     {
       int r = libusb_init(&usb_context_);
@@ -389,9 +381,6 @@ public:
         return;
       }
 
-#if defined(_WIN32) || defined (__WIN32__) || defined(__WINDOWS__)
-      (void)libusb_set_option(usb_context_, LIBUSB_OPTION_USE_USBDK);
-#endif
     }
 
     usb_event_loop_.start(usb_context_);
@@ -846,19 +835,9 @@ bool Freenect2DeviceImpl::open()
 
   unsigned rgb_xfer_size = 0x4000;
   unsigned rgb_num_xfers = 20;
-  unsigned ir_pkts_per_xfer = 8;
-  unsigned ir_num_xfers = 60;
-
-#if defined(__APPLE__)
-  ir_pkts_per_xfer = 128;
-  ir_num_xfers = 4;
-#elif defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)
-  // For multi-Kinect setup, there is a 64 fd limit on poll().
-  rgb_xfer_size = 1048576;
-  rgb_num_xfers = 3;
-  ir_pkts_per_xfer = 64;
-  ir_num_xfers = 8;
-#endif
+  // macOS optimized settings
+  unsigned ir_pkts_per_xfer = 128;
+  unsigned ir_num_xfers = 4;
 
   const char *xfer_str;
   xfer_str = std::getenv("LIBFREENECT2_RGB_TRANSFER_SIZE");
@@ -1090,13 +1069,13 @@ bool Freenect2DeviceImpl::close()
 
 PacketPipeline *createPacketPipelineByName(std::string name)
 {
+#if defined(LIBFREENECT2_WITH_METAL_SUPPORT)
+  if (name == "metal")
+    return new MetalPacketPipeline();
+#endif
 #if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
   if (name == "gl")
     return new OpenGLPacketPipeline();
-#endif
-#if defined(LIBFREENECT2_WITH_CUDA_SUPPORT)
-  if (name == "cuda")
-    return new CudaPacketPipeline();
 #endif
 #if defined(LIBFREENECT2_WITH_OPENCL_SUPPORT)
   if (name == "cl")
@@ -1119,10 +1098,10 @@ PacketPipeline *createDefaultPacketPipeline()
       LOG_WARNING << "`" << pipeline_env << "' pipeline is not available.";
   }
 
-#if defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
+#if defined(LIBFREENECT2_WITH_METAL_SUPPORT)
+  return new MetalPacketPipeline();
+#elif defined(LIBFREENECT2_WITH_OPENGL_SUPPORT)
   return new OpenGLPacketPipeline();
-#elif defined(LIBFREENECT2_WITH_CUDA_SUPPORT)
-  return new CudaPacketPipeline();
 #elif defined(LIBFREENECT2_WITH_OPENCL_SUPPORT)
   return new OpenCLPacketPipeline();
 #else

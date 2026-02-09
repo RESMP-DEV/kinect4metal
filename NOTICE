@@ -1,0 +1,57 @@
+Kinect4Metal
+Copyright (c) 2026 RESMP-DEV
+
+This project is a derivative work of libfreenect2, originally developed by
+the OpenKinect Project (http://www.openkinect.org).
+
+Original libfreenect2 Copyright (c) 2014-2024 individual OpenKinect contributors.
+See the CONTRIB file for the full list of original contributors.
+
+This derivative work is licensed under the MIT License.
+See the LICENSE file for the full license text.
+
+================================================================================
+MODIFICATIONS FROM ORIGINAL LIBFREENECT2
+================================================================================
+
+This fork diverges significantly from the original libfreenect2 project:
+
+1. PLATFORM FOCUS
+   - macOS 11+ only (Big Sur and newer)
+   - Apple Silicon (arm64) native support
+   - Removed Windows and Linux support
+
+2. GPU COMPUTE
+   - Added Metal compute shader pipeline for depth processing
+   - Removed CUDA support (not available on macOS)
+   - Removed VAAPI support (Linux-only)
+   - Removed TegraJPEG support (NVIDIA Jetson-only)
+
+3. BUILD SYSTEM
+   - macOS Framework build target
+   - CMakePresets for Xcode integration
+   - Homebrew dependency paths (Apple Silicon + Intel)
+
+4. CODE CLEANUP
+   - Removed Linux udev rules
+   - Removed Windows UsbDk driver code
+   - Simplified to macOS-only code paths
+
+================================================================================
+ORIGINAL LICENSE NOTICE
+================================================================================
+
+The original libfreenect2 code was dual-licensed under Apache 2.0 and GPL 2.0.
+This derivative work re-licenses all contributions under the MIT License for
+simplicity and maximum compatibility.
+
+================================================================================
+ATTRIBUTION
+================================================================================
+
+Special thanks to the OpenKinect community and all original contributors
+listed in the CONTRIB file for their foundational work on open-source
+Kinect drivers.
+
+The OpenKinect Project: http://www.openkinect.org
+Original Repository: https://github.com/OpenKinect/libfreenect2

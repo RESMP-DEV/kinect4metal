@@ -1,0 +1,168 @@
+# yaml-language-server: $schema=
+# Master task list for kinect4metal macOS Pivot
+# Rebranding kinect4metal → kinect4metal with macOS-only focus
+
+# ============================================================================
+# PROJECT OVERVIEW
+# ============================================================================
+#
+# Goal: Fork and rebrand kinect4metal as "kinect4metal" - a macOS-only
+#       Kinect v2 driver with native Apple Silicon and Metal compute support.
+#
+# Legal: Apache 2.0 licensed derivative work with proper attribution.
+#        See NOTICE file for full attribution to OpenKinect project.
+#
+# Phases:
+#   Phase 0 (P0): Project Rebrand - Legal separation, rename to kinect4metal
+#   Phase 1 (P0): macOS Infrastructure - Build system, platform directory
+#   Phase 2 (P1): Metal Depth Processing - Native GPU compute shaders
+#   Phase 3 (P2): Cleanup - Remove Linux/Windows code paths
+#   Phase 4 (P3): Documentation - README rewrite, examples, guides
+#   Phase 5 (P2): Testing - Build verification, unit tests, CI
+#
+# Execution Order:
+#   0. Add phase0 tasks: uv run alphaheng tasks add contrib/kinect4metal/tasks/phase0_project_rebrand.yaml
+#   1. Add phase1 tasks: uv run alphaheng tasks add contrib/kinect4metal/tasks/phase1_macos_infrastructure.yaml
+#   2. Run coordinator until phases 0 & 1 complete
+#   3. Add phase2 tasks: uv run alphaheng tasks add contrib/kinect4metal/tasks/phase2_metal_depth_processing.yaml
+#   4. Add phase3 tasks: uv run alphaheng tasks add contrib/kinect4metal/tasks/phase3_cleanup_linux_windows.yaml
+#   5. Run coordinator for phases 2 & 3
+#   6. Add phase4 & phase5: uv run alphaheng tasks add contrib/kinect4metal/tasks/phase4_documentation_examples.yaml
+#                          uv run alphaheng tasks add contrib/kinect4metal/tasks/phase5_testing_validation.yaml
+#   7. Run coordinator to completion
+#
+# GitHub Repository: After phase 0, rename RESMP-DEV/kinect4metal → RESMP-DEV/kinect4metal
+#
+# ============================================================================
+
+tasks:
+  # ============================================================================
+  # PHASE 1: CRITICAL INFRASTRUCTURE (P0)
+  # ============================================================================
+  # Must complete before anything else
+
+  - name: k4m-phase1-start
+    prompt: |
+      Begin kinect4metal macOS pivot Phase 1.
+
+      This is a marker task. Run:
+      ```bash
+      uv run alphaheng tasks add contrib/kinect4metal/tasks/phase1_macos_infrastructure.yaml
+      ```
+
+      Phase 1 includes:
+      - CMakeLists.txt macOS-only conversion
+      - Apple Silicon (arm64) support
+      - Framework build target
+      - platform/macos directory creation
+      - CMake find modules for Homebrew
+      - Remove Linux-specific libusb checks
+
+      Estimated: 12 atomic tasks
+    priority: P0
+    verify_command: test -f contrib/kinect4metal/tasks/phase1_macos_infrastructure.yaml
+
+  # ============================================================================
+  # PHASE 2: METAL COMPUTE (P1)
+  # ============================================================================
+  # Depends on Phase 1 CMake changes
+
+  - name: k4m-phase2-start
+    prompt: |
+      Begin kinect4metal Metal depth processing Phase 2.
+
+      Run after Phase 1 completes:
+      ```bash
+      uv run alphaheng tasks add contrib/kinect4metal/tasks/phase2_metal_depth_processing.yaml
+      ```
+
+      Phase 2 includes:
+      - Metal compute shader (porting OpenCL kernels)
+      - MetalDepthPacketProcessor implementation
+      - CMake Metal integration
+      - MetalPacketPipeline class
+      - VideoToolbox optimization
+
+      Estimated: 10 atomic tasks
+    priority: P1
+    dependencies: [k4m-phase1-start]
+    verify_command: test -f contrib/kinect4metal/tasks/phase2_metal_depth_processing.yaml
+
+  # ============================================================================
+  # PHASE 3: CODE CLEANUP (P2)
+  # ============================================================================
+  # Can run in parallel with Phase 2 after Phase 1
+
+  - name: k4m-phase3-start
+    prompt: |
+      Begin kinect4metal Linux/Windows cleanup Phase 3.
+
+      Run after Phase 1 completes (can parallel with Phase 2):
+      ```bash
+      uv run alphaheng tasks add contrib/kinect4metal/tasks/phase3_cleanup_linux_windows.yaml
+      ```
+
+      Phase 3 includes:
+      - Remove VAAPI, TegraJPEG, CUDA processors
+      - Remove Linux/Windows platform directories
+      - Remove Linux/Windows dependency scripts
+      - Clean up conditional compilation
+      - Update Protonect example
+
+      Estimated: 15 atomic tasks
+    priority: P2
+    dependencies: [k4m-phase1-start]
+    verify_command: test -f contrib/kinect4metal/tasks/phase3_cleanup_linux_windows.yaml
+
+  # ============================================================================
+  # PHASE 4: DOCUMENTATION (P3)
+  # ============================================================================
+  # Lower priority, can run after structural changes
+
+  - name: k4m-phase4-start
+    prompt: |
+      Begin kinect4metal documentation Phase 4.
+
+      Run after Phases 1-3 complete:
+      ```bash
+      uv run alphaheng tasks add contrib/kinect4metal/tasks/phase4_documentation_examples.yaml
+      ```
+
+      Phase 4 includes:
+      - README.md macOS rewrite
+      - install_macos.sh script
+      - SwiftUI example app skeleton
+      - CMakePresets.json for Xcode
+      - Troubleshooting guide
+
+      Estimated: 10 atomic tasks
+    priority: P3
+    dependencies: [k4m-phase3-start]
+    verify_command: test -f contrib/kinect4metal/tasks/phase4_documentation_examples.yaml
+
+  # ============================================================================
+  # PHASE 5: TESTING (P2)
+  # ============================================================================
+  # Tests should run after main code changes
+
+  - name: k4m-phase5-start
+    prompt: |
+      Begin kinect4metal testing Phase 5.
+
+      Run after Phases 1-2 complete:
+      ```bash
+      uv run alphaheng tasks add contrib/kinect4metal/tasks/phase5_testing_validation.yaml
+      ```
+
+      Phase 5 includes:
+      - Build verification script
+      - Unit test framework (Catch2)
+      - Registration tests
+      - Depth table tests  
+      - GitHub Actions CI workflow
+      - Integration test script
+
+      Estimated: 10 atomic tasks
+    priority: P2
+    dependencies: [k4m-phase2-start]
+    verify_command: test -f contrib/kinect4metal/tasks/phase5_testing_validation.yaml

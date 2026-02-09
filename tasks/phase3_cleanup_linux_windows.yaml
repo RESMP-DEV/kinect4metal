@@ -1,0 +1,251 @@
+# yaml-language-server: $schema=
+# Phase 3: Code Cleanup - Remove Linux/Windows specific code
+# Focus the codebase on macOS only
+
+tasks:
+  # ============================================================================
+  # REMOVE LINUX-SPECIFIC FILES
+  # ============================================================================
+
+  - name: remove-vaapi-processor
+    prompt: |
+      Delete `contrib/kinect4metal/src/vaapi_rgb_packet_processor.cpp`.
+
+      This file implements VA-API hardware JPEG decoding which is Intel+Linux only.
+      macOS uses VideoToolbox instead.
+
+      ```bash
+      rm contrib/kinect4metal/src/vaapi_rgb_packet_processor.cpp
+      ```
+    priority: P2
+    dependencies: [cmake-macos-only]
+    verify_command: "! test -f contrib/kinect4metal/src/vaapi_rgb_packet_processor.cpp"
+
+  - name: remove-tegra-processor
+    prompt: |
+      Delete `contrib/kinect4metal/src/tegra_jpeg_rgb_packet_processor.cpp`.
+
+      This file implements NVIDIA Tegra (Jetson) hardware JPEG decoding.
+      Not applicable to macOS.
+
+      ```bash
+      rm contrib/kinect4metal/src/tegra_jpeg_rgb_packet_processor.cpp
+      ```
+    priority: P2
+    dependencies: [cmake-macos-only]
+    verify_command: "! test -f contrib/kinect4metal/src/tegra_jpeg_rgb_packet_processor.cpp"
+
+  - name: remove-cuda-processors
+    prompt: |
+      Delete CUDA-specific source files (not available on macOS):
+
+      ```bash
+      rm contrib/kinect4metal/src/cuda_depth_packet_processor.cu
+      rm contrib/kinect4metal/src/cuda_kde_depth_packet_processor.cu
+      ```
+
+      macOS will use Metal or OpenCL (via Metal translation layer) instead.
+    priority: P2
+    dependencies: [cmake-macos-only]
+    verify_command: "! test -f contrib/kinect4metal/src/cuda_depth_packet_processor.cu"
+
+  - name: remove-linux-platform
+    prompt: |
+      Remove Linux platform directory:
+
+      ```bash
+      rm -rf contrib/kinect4metal/platform/linux
+      ```
+
+      The udev rules are only for Linux USB device permissions.
+    priority: P2
+    dependencies: [create-platform-macos-dir]
+    verify_command: "! test -d contrib/kinect4metal/platform/linux"
+
+  - name: remove-windows-platform
+    prompt: |
+      Remove Windows platform directory:
+
+      ```bash
+      rm -rf contrib/kinect4metal/platform/windows
+      ```
+
+      Windows tracing tools are not applicable to macOS.
+    priority: P2
+    dependencies: [create-platform-macos-dir]
+    verify_command: "! test -d contrib/kinect4metal/platform/windows"
+
+  # ============================================================================
+  # REMOVE LINUX/WINDOWS DEPENDENCIES SCRIPTS
+  # ============================================================================
+
+  - name: remove-windows-depends
+    prompt: |
+      Remove Windows-specific dependency scripts from `contrib/kinect4metal/depends/`:
+
+      ```bash
+      rm contrib/kinect4metal/depends/install_libusb_vs2013.cmd
+      rm contrib/kinect4metal/depends/install_libusb_vs2015.cmd
+      rm contrib/kinect4metal/depends/make_release_msvc.cmd
+      rm contrib/kinect4metal/depends/INSTALL-windows.txt
+      ```
+    priority: P2
+    verify_command: "! test -f contrib/kinect4metal/depends/install_libusb_vs2015.cmd"
+
+  - name: remove-linux-depends
+    prompt: |
+      Remove Linux-specific dependency scripts from `contrib/kinect4metal/depends/`:
+
+      ```bash
+      rm contrib/kinect4metal/depends/download_debs_trusty.sh
+      rm contrib/kinect4metal/depends/install_ubuntu.sh
+      ```
+
+      These scripts are for Ubuntu package installation.
+    priority: P2
+    verify_command: "! test -f contrib/kinect4metal/depends/install_ubuntu.sh"
+
+  # ============================================================================
+  # CMAKE MODULE CLEANUP
+  # ============================================================================
+
+  - name: remove-tegrajpeg-cmake
+    prompt: |
+      Delete `contrib/kinect4metal/cmake_modules/FindTegraJPEG.cmake`.
+
+      This is for NVIDIA Jetson platforms only.
+
+      ```bash
+      rm contrib/kinect4metal/cmake_modules/FindTegraJPEG.cmake
+      ```
+    priority: P2
+    dependencies: [cmake-macos-only]
+    verify_command: "! test -f contrib/kinect4metal/cmake_modules/FindTegraJPEG.cmake"
+
+  - name: remove-opencl-icd-check
+    prompt: |
+      Delete `contrib/kinect4metal/cmake_modules/CheckOpenCLICDLoader.cmake`.
+
+      This is for checking Linux OpenCL ICD loader compatibility issues.
+      macOS OpenCL is provided by Apple and doesn't have these issues.
+
+      ```bash
+      rm contrib/kinect4metal/cmake_modules/CheckOpenCLICDLoader.cmake
+      ```
+
+      Also remove the INCLUDE(CheckOpenCLICDLoader) call from CMakeLists.txt.
+    priority: P2
+    dependencies: [cmake-macos-only]
+    verify_command: "! test -f contrib/kinect4metal/cmake_modules/CheckOpenCLICDLoader.cmake"
+
+  # ============================================================================
+  # SOURCE CLEANUP - REMOVE CONDITIONAL COMPILATION
+  # ============================================================================
+
+  - name: cleanup-packet-pipeline-conditionals
+    prompt: |
+      In `contrib/kinect4metal/src/packet_pipeline.cpp`, remove CUDA and VAAPI pipeline classes.
+
+      Remove:
+      1. CudaPacketPipeline class and implementation
+      2. CudaKdePacketPipeline class and implementation
+      3. Any CUDA-related includes
+      4. Update createPacketPipelineByName() to remove "cuda" and "cudakde" options
+
+      Keep: CpuPacketPipeline, OpenGLPacketPipeline, OpenCLPacketPipeline, MetalPacketPipeline
+    priority: P2
+    dependencies: [metal-packet-pipeline]
+    verify_command: "! grep -q 'CudaPacketPipeline' contrib/kinect4metal/src/packet_pipeline.cpp"
+
+  - name: cleanup-pipeline-header-conditionals
+    prompt: |
+      In `contrib/kinect4metal/include/libfreenect2/packet_pipeline.h`, remove CUDA pipeline declarations.
+
+      Remove the CudaPacketPipeline and CudaKdePacketPipeline class forward declarations
+      and their #ifdef LIBFREENECT2_WITH_CUDA_SUPPORT blocks.
+
+      Keep the LIBFREENECT2_WITH_METAL_SUPPORT block for MetalPacketPipeline.
+    priority: P2
+    dependencies: [metal-pipeline-header]
+    verify_command: "! grep -q 'CudaPacketPipeline' contrib/kinect4metal/include/libfreenect2/packet_pipeline.h"
+
+  - name: cleanup-protonect-example
+    prompt: |
+      Clean up `contrib/kinect4metal/examples/Protonect.cpp` for macOS-only:
+
+      1. Remove the Windows-specific console logger level:
+         ```cpp
+         #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
+           libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Info));
+         #else
+         ```
+         Keep only the non-Windows path.
+
+      2. Add "metal" as a command-line pipeline option:
+         ```cpp
+         else if(arg == "metal")
+         {
+         #ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+           if(!pipeline)
+             pipeline = new libfreenect2::MetalPacketPipeline();
+         #else
+           std::cout << "Metal pipeline is not supported!" << std::endl;
+         #endif
+         }
+         ```
+
+      3. Update help text to show available macOS options
+    priority: P2
+    verify_command: grep -q '"metal"' contrib/kinect4metal/examples/Protonect.cpp
+
+  # ============================================================================
+  # INTERNAL HEADER CLEANUP
+  # ============================================================================
+
+  - name: remove-vaapi-header-refs
+    prompt: |
+      Search for and remove any VAAPI references in header files:
+
+      In `contrib/kinect4metal/include/internal/libfreenect2/rgb_packet_processor.h`:
+      - Remove VaApiRgbPacketProcessor forward declaration if present
+      - Remove any VAAPI-related includes
+
+      Check other internal headers for VAAPI references.
+    priority: P2
+    dependencies: [remove-vaapi-processor]
+    verify_command: "! grep -r 'VaApi' contrib/kinect4metal/include/"
+
+  - name: remove-tegra-header-refs
+    prompt: |
+      Search for and remove any Tegra/TegraJPEG references in header files.
+
+      Check `contrib/kinect4metal/include/internal/libfreenect2/rgb_packet_processor.h` 
+      and other headers for Tegra-related forward declarations or includes.
+    priority: P2
+    dependencies: [remove-tegra-processor]
+    verify_command: "! grep -r 'Tegra' contrib/kinect4metal/include/"
+
+  # ============================================================================
+  # INTERNAL CL HEADERS REVIEW
+  # ============================================================================
+
+  - name: review-cl-headers
+    prompt: |
+      Review `contrib/kinect4metal/include/internal/CL/` directory.
+
+      These are OpenCL 1.2 headers bundled for systems without OpenCL SDK.
+
+      For macOS:
+      - Apple provides OpenCL.framework with its own headers
+      - Consider removing this directory and using system headers
+      - Or keep for backward compatibility with users who might need them
+
+      If keeping, add a note in CMakeLists.txt to prefer system OpenCL on macOS:
+      ```cmake
+      IF(APPLE)
+        # Use Apple's OpenCL.framework headers
+        SET(OpenCL_INCLUDE_DIR "")  # Use system
+      ENDIF()
+      ```
+    priority: P2
+    verify_command: "echo 'Review task - manual verification needed'"

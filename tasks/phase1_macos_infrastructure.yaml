@@ -1,0 +1,270 @@
+# yaml-language-server: $schema=
+# Phase 1: macOS Infrastructure - Critical foundation tasks
+# These tasks set up the build system and platform structure for macOS
+
+tasks:
+  # ============================================================================
+  # BUILD SYSTEM MODERNIZATION
+  # ============================================================================
+
+  - name: cmake-macos-only
+    prompt: |
+      Modify `contrib/kinect4metal/CMakeLists.txt` to remove Linux/Windows-specific code paths
+      and focus on macOS only.
+
+      Changes needed:
+      1. Remove the WIN32 install prefix override (lines ~15-18)
+      2. Remove MSVC-specific compiler flags (lines ~56-58)
+      3. Remove ENABLE_VAAPI option (Linux only)
+      4. Remove ENABLE_TEGRAJPEG option (Tegra only)
+      5. Remove the VAAPI section entirely (lines ~157-178)
+      6. Remove the TegraJPEG section entirely (lines ~180-198)
+      7. Remove Windows UsbDk option code
+      8. Remove Linux libusb version check (lines in Freenect2Impl constructor)
+      9. Keep: OpenGL, OpenCL, VideoToolbox, TurboJPEG (fallback)
+      10. Add option: ENABLE_METAL "Enable Metal compute support" ON
+
+      Keep the structure clean and well-commented for macOS focus.
+    priority: P0
+    verify_command: |
+      grep -q "ENABLE_METAL" contrib/kinect4metal/CMakeLists.txt && \
+      ! grep -q "ENABLE_VAAPI" contrib/kinect4metal/CMakeLists.txt
+
+  - name: cmake-arm64-support
+    prompt: |
+      Update `contrib/kinect4metal/CMakeLists.txt` to add proper Apple Silicon support.
+
+      Add after the PROJECT() line:
+      ```cmake
+      # Apple Silicon support
+      IF(APPLE)
+        SET(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
+        SET(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+      ENDIF()
+      ```
+
+      Also update the C++ standard section to ensure arm64 compatibility:
+      - Keep C++17 requirement
+      - Add `-arch arm64` for APPLE builds if not already universal
+    priority: P0
+    dependencies: [cmake-macos-only]
+    verify_command: grep -q "CMAKE_OSX_ARCHITECTURES" contrib/kinect4metal/CMakeLists.txt
+
+  - name: cmake-framework-target
+    prompt: |
+      Add macOS Framework build target to `contrib/kinect4metal/CMakeLists.txt`.
+
+      After the freenect2 library target definition, add:
+      ```cmake
+      IF(APPLE)
+        OPTION(BUILD_FRAMEWORK "Build as macOS Framework" ON)
+        IF(BUILD_FRAMEWORK)
+          SET_TARGET_PROPERTIES(freenect2 PROPERTIES
+            FRAMEWORK TRUE
+            FRAMEWORK_VERSION A
+            MACOSX_FRAMEWORK_IDENTIFIER org.openkinect.libfreenect2
+            MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${PROJECT_VER}
+            MACOSX_FRAMEWORK_BUNDLE_VERSION ${PROJECT_VER}
+            PUBLIC_HEADER "${MY_DIR}/include/libfreenect2/libfreenect2.hpp;${MY_DIR}/include/libfreenect2/frame_listener.hpp;${MY_DIR}/include/libfreenect2/frame_listener_impl.h;${MY_DIR}/include/libfreenect2/packet_pipeline.h;${MY_DIR}/include/libfreenect2/registration.h;${MY_DIR}/include/libfreenect2/logger.h;${MY_DIR}/include/libfreenect2/config.h;${PROJECT_BINARY_DIR}/libfreenect2/config.h;${PROJECT_BINARY_DIR}/libfreenect2/export.h"
+          )
+        ENDIF()
+      ENDIF()
+      ```
+    priority: P0
+    dependencies: [cmake-arm64-support]
+    verify_command: grep -q "BUILD_FRAMEWORK" contrib/kinect4metal/CMakeLists.txt
+
+  # ============================================================================
+  # PLATFORM DIRECTORY STRUCTURE
+  # ============================================================================
+
+  - name: create-platform-macos-dir
+    prompt: |
+      Create the macOS platform directory structure:
+
+      ```bash
+      mkdir -p contrib/kinect4metal/platform/macos/Resources
+      mkdir -p contrib/kinect4metal/platform/macos/Entitlements
+      ```
+
+      This will hold macOS-specific resources like Info.plist templates and USB entitlements.
+    priority: P0
+    verify_command: test -d contrib/kinect4metal/platform/macos
+
+  - name: create-info-plist-template
+    prompt: |
+      Create `contrib/kinect4metal/platform/macos/Resources/Info.plist.in` with CMake variables:
+
+      ```xml
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+          <key>CFBundleDevelopmentRegion</key>
+          <string>en</string>
+          <key>CFBundleExecutable</key>
+          <string>freenect2</string>
+          <key>CFBundleIdentifier</key>
+          <string>org.openkinect.libfreenect2</string>
+          <key>CFBundleInfoDictionaryVersion</key>
+          <string>6.0</string>
+          <key>CFBundleName</key>
+          <string>libfreenect2</string>
+          <key>CFBundlePackageType</key>
+          <string>FMWK</string>
+          <key>CFBundleShortVersionString</key>
+          <string>@PROJECT_VER@</string>
+          <key>CFBundleVersion</key>
+          <string>@PROJECT_VER@</string>
+          <key>NSHumanReadableCopyright</key>
+          <string>Copyright © OpenKinect. Apache 2.0 / GPL 2.0</string>
+          <key>LSMinimumSystemVersion</key>
+          <string>11.0</string>
+      </dict>
+      </plist>
+      ```
+    priority: P0
+    dependencies: [create-platform-macos-dir]
+    verify_command: test -f contrib/kinect4metal/platform/macos/Resources/Info.plist.in
+
+  - name: create-usb-entitlements
+    prompt: |
+      Create `contrib/kinect4metal/platform/macos/Entitlements/Protonect.entitlements`:
+
+      ```xml
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+          <key>com.apple.security.device.usb</key>
+          <true/>
+          <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+          <true/>
+      </dict>
+      </plist>
+      ```
+
+      This allows the Protonect example to access USB devices on modern macOS.
+    priority: P0
+    dependencies: [create-platform-macos-dir]
+    verify_command: test -f contrib/kinect4metal/platform/macos/Entitlements/Protonect.entitlements
+
+  # ============================================================================
+  # CMAKE FIND MODULES UPDATE
+  # ============================================================================
+
+  - name: update-findlibusb-macos
+    prompt: |
+      Update `contrib/kinect4metal/cmake_modules/FindLibUSB.cmake` for modern macOS.
+
+      Add Homebrew paths for Apple Silicon and Intel:
+      ```cmake
+      # Homebrew paths for macOS
+      IF(APPLE)
+        LIST(APPEND CMAKE_PREFIX_PATH
+          "/opt/homebrew"           # Apple Silicon
+          "/usr/local"              # Intel
+        )
+        SET(LIBUSB_HINTS
+          "/opt/homebrew/lib"
+          "/opt/homebrew/include"
+          "/usr/local/lib"
+          "/usr/local/include"
+        )
+      ENDIF()
+      ```
+
+      Update the FIND_PATH and FIND_LIBRARY calls to use LIBUSB_HINTS.
+    priority: P0
+    verify_command: grep -q "opt/homebrew" contrib/kinect4metal/cmake_modules/FindLibUSB.cmake
+
+  - name: update-findglfw3-macos
+    prompt: |
+      Update `contrib/kinect4metal/cmake_modules/FindGLFW3.cmake` for Homebrew on Apple Silicon.
+
+      Add at the beginning:
+      ```cmake
+      # Homebrew paths for macOS
+      IF(APPLE)
+        LIST(APPEND CMAKE_PREFIX_PATH "/opt/homebrew" "/usr/local")
+      ENDIF()
+      ```
+
+      Ensure it finds glfw from Homebrew correctly on both arm64 and x86_64.
+    priority: P0
+    verify_command: grep -q "opt/homebrew" contrib/kinect4metal/cmake_modules/FindGLFW3.cmake
+
+  - name: update-findturbojpeg-macos
+    prompt: |
+      Update `contrib/kinect4metal/cmake_modules/FindTurboJPEG.cmake` for Homebrew on macOS.
+
+      Add Homebrew paths:
+      ```cmake
+      IF(APPLE)
+        SET(TurboJPEG_HINTS
+          "/opt/homebrew/opt/jpeg-turbo"
+          "/usr/local/opt/jpeg-turbo"
+        )
+      ENDIF()
+      ```
+
+      Update FIND_PATH and FIND_LIBRARY to use these hints.
+    priority: P0
+    verify_command: grep -q "jpeg-turbo" contrib/kinect4metal/cmake_modules/FindTurboJPEG.cmake
+
+  # ============================================================================
+  # SOURCE CODE CLEANUP - REMOVE LINUX/WINDOWS PATHS
+  # ============================================================================
+
+  - name: remove-linux-libusb-check
+    prompt: |
+      In `contrib/kinect4metal/src/libfreenect2.cpp`, remove the Linux-specific libusb version check.
+
+      Find and remove this block from Freenect2Impl constructor (around line 468):
+      ```cpp
+      #ifdef __linux__
+        if (libusb_get_version()->nano < 10952)
+        {
+          LOG_ERROR << "Your libusb does not support large iso buffer!";
+          return;
+        }
+      #endif
+      ```
+
+      This check is only relevant for old Linux distributions.
+    priority: P0
+    verify_command: "! grep -q 'libusb_get_version.*nano' contrib/kinect4metal/src/libfreenect2.cpp"
+
+  - name: remove-windows-usbdk
+    prompt: |
+      In `contrib/kinect4metal/src/libfreenect2.cpp`, remove the Windows UsbDk option.
+
+      Find and remove this block from Freenect2Impl constructor:
+      ```cpp
+      #if defined(_WIN32) || defined (__WIN32__) || defined(__WINDOWS__)
+            (void)libusb_set_option(usb_context_, LIBUSB_OPTION_USE_USBDK);
+      #endif
+      ```
+
+      This is Windows-only code.
+    priority: P0
+    verify_command: "! grep -q 'LIBUSB_OPTION_USE_USBDK' contrib/kinect4metal/src/libfreenect2.cpp"
+
+  - name: simplify-transfer-pool-settings
+    prompt: |
+      In `contrib/kinect4metal/src/libfreenect2.cpp`, in Freenect2DeviceImpl::open(), 
+      simplify the transfer pool settings to only use macOS values.
+
+      Find the section with platform-specific transfer settings and change to:
+      ```cpp
+      unsigned rgb_xfer_size = 0x4000;
+      unsigned rgb_num_xfers = 20;
+      // macOS optimized settings
+      unsigned ir_pkts_per_xfer = 128;
+      unsigned ir_num_xfers = 4;
+      ```
+
+      Remove the #if defined(__APPLE__), #elif defined(_WIN32), and #endif blocks.
+      Keep the environment variable overrides for advanced users.
+    priority: P0
+    verify_command: "! grep -q '#elif defined(_WIN32)' contrib/kinect4metal/src/libfreenect2.cpp"

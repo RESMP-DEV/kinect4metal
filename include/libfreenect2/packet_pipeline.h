@@ -130,31 +130,60 @@ public:
 };
 #endif // LIBFREENECT2_WITH_OPENCL_SUPPORT
 
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-class LIBFREENECT2_API CudaPacketPipeline : public PacketPipeline
-{
-protected:
-  const int deviceId;
-public:
-  CudaPacketPipeline(const int deviceId = -1);
-  virtual ~CudaPacketPipeline();
-};
-
-/*
- * The class below implement a depth packet processor using the phase unwrapping
- * algorithm described in the paper "Efficient Phase Unwrapping using Kernel
- * Density Estimation", ECCV 2016, Felix Järemo Lawin, Per-Erik Forssen and
- * Hannes Ovren, see http://www.cvl.isy.liu.se/research/datasets/kinect2-dataset/.
+#ifdef LIBFREENECT2_WITH_METAL_SUPPORT
+/**
+ * @brief Pipeline using Apple Metal compute shaders for depth processing.
+ *
+ * This pipeline uses native Apple Metal compute shaders for optimal performance
+ * on macOS, especially Apple Silicon (M1/M2/M3/M4) Macs.
+ *
+ * **When to use:**
+ * - On Apple Silicon Macs (best performance)
+ * - On Metal-capable Intel Macs (2012+)
+ * - When lowest latency is required
+ * - For production macOS applications
+ *
+ * **Platform Support:**
+ * | Platform | Support |
+ * |----------|---------|
+ * | macOS (Apple Silicon) | ✅ Native, optimal |
+ * | macOS (Intel) | ✅ Available |
+ * | Linux | ❌ Not available |
+ * | Windows | ❌ Not available |
+ *
+ * **Example usage:**
+ * @code{.cpp}
+ * // Explicitly create Metal pipeline
+ * libfreenect2::MetalPacketPipeline* pipeline =
+ *     new libfreenect2::MetalPacketPipeline();
+ * auto dev = freenect2.openDevice(serial, pipeline);
+ * @endcode
+ *
+ * Or via environment variable:
+ * @code{.bash}
+ * export LIBFREENECT2_PIPELINE=metal
+ * ./Protonect
+ * @endcode
+ *
+ * @note This class is only available when libfreenect2 is built with
+ *       ENABLE_METAL=ON (default on macOS).
+ * @note Requires macOS 10.11 (Big Sur) or later.
+ *
+ * @see OpenCLPacketPipeline OpenGLPacketPipeline CpuPacketPipeline
  */
-class LIBFREENECT2_API CudaKdePacketPipeline : public PacketPipeline
+class LIBFREENECT2_API MetalPacketPipeline : public PacketPipeline
 {
 protected:
   const int deviceId;
 public:
-  CudaKdePacketPipeline(const int deviceId = -1);
-  virtual ~CudaKdePacketPipeline();
+  /**
+   * @brief Construct a Metal packet pipeline.
+   * @param deviceId Metal device ID (-1 for default/system default)
+   */
+  MetalPacketPipeline(const int deviceId = -1);
+  virtual ~MetalPacketPipeline();
 };
-#endif // LIBFREENECT2_WITH_CUDA_SUPPORT
+#endif
 
 ///@}
 } /* namespace libfreenect2 */

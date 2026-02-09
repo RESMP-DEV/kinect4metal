@@ -98,12 +98,11 @@ public:
 
 /// [main]
 /**
- * Main application entry point.
+ * Main application entry point (macOS).
  *
- * Accepted argumemnts:
- * - cpu Perform depth processing with the CPU.
- * - gl  Perform depth processing with OpenGL.
- * - cl  Perform depth processing with OpenCL.
+ * Accepted arguments:
+ * - cpu     Perform depth processing with the CPU.
+ * - metal   Perform depth processing with Metal (macOS default).
  * - <number> Serial number of the device to open.
  * - -noviewer Disable viewer window.
  */
@@ -113,9 +112,8 @@ int main(int argc, char *argv[])
   std::string program_path(argv[0]);
   std::cerr << "Version: " << LIBFREENECT2_VERSION << std::endl;
   std::cerr << "Environment variables: LOGFILE=<protonect.log>" << std::endl;
-  std::cerr << "Usage: " << program_path << " [-gpu=<id>] [gl | cl | clkde | cuda | cudakde | cpu] [<device serial>]" << std::endl;
-  std::cerr << "        [-noviewer] [-norgb | -nodepth] [-help] [-version]" << std::endl;
-  std::cerr << "        [-frames <number of frames to process>]" << std::endl;
+  std::cerr << "Usage: " << program_path << " [cpu | metal] [<device serial>]" << std::endl;
+  std::cerr << "        [-noviewer] [-norgb | -nodepth] [-help] [-version] [-frames <n>]" << std::endl;
   std::cerr << "To pause and unpause: pkill -USR1 Protonect" << std::endl;
   size_t executable_name_idx = program_path.rfind("Protonect");
 
@@ -126,15 +124,10 @@ int main(int argc, char *argv[])
     binpath = program_path.substr(0, executable_name_idx);
   }
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__)
-  // avoid flooing the very slow Windows console with debug messages
+  // create a console logger with info level
+/// [logging]
   libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Info));
-#else
-  // create a console logger with debug level (default is console logger with info level)
 /// [logging]
-  libfreenect2::setGlobalLogger(libfreenect2::createConsoleLogger(libfreenect2::Logger::Debug));
-/// [logging]
-#endif
 /// [file logging]
   MyFileLogger *filelogger = new MyFileLogger(getenv("LOGFILE"));
   if (filelogger->good())
@@ -191,42 +184,16 @@ int main(int argc, char *argv[])
       std::cout << "OpenGL pipeline is not supported!" << std::endl;
 #endif
     }
-    else if(arg == "cl")
+    else if(arg == "metal")
     {
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
+#ifdef LIBFREENECT2_WITH_METAL_SUPPORT
       if(!pipeline)
-        pipeline = new libfreenect2::OpenCLPacketPipeline(deviceId);
+        pipeline = new libfreenect2::MetalPacketPipeline();
 #else
-      std::cout << "OpenCL pipeline is not supported!" << std::endl;
+      std::cout << "Metal pipeline is not supported!" << std::endl;
 #endif
     }
-    else if(arg == "clkde")
-    {
-#ifdef LIBFREENECT2_WITH_OPENCL_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::OpenCLKdePacketPipeline(deviceId);
-#else
-      std::cout << "OpenCL pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "cuda")
-    {
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::CudaPacketPipeline(deviceId);
-#else
-      std::cout << "CUDA pipeline is not supported!" << std::endl;
-#endif
-    }
-    else if(arg == "cudakde")
-    {
-#ifdef LIBFREENECT2_WITH_CUDA_SUPPORT
-      if(!pipeline)
-        pipeline = new libfreenect2::CudaKdePacketPipeline(deviceId);
-#else
-      std::cout << "CUDA pipeline is not supported!" << std::endl;
-#endif
-    }
+
     else if(arg.find_first_not_of("0123456789") == std::string::npos) //check if parameter could be a serial number
     {
       serial = arg;

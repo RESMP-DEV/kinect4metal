@@ -1,0 +1,377 @@
+# yaml-language-server: $schema=
+# Phase 4: Documentation and Examples
+# macOS-focused documentation and modern example applications
+
+tasks:
+  # ============================================================================
+  # README REWRITE
+  # ============================================================================
+
+  - name: readme-macos-rewrite
+    prompt: |
+      Completely rewrite `contrib/kinect4metal/README.md` for macOS-only focus.
+
+      New structure:
+      1. **Title & Description**
+         - kinect4metal for macOS
+         - Driver for Kinect v2 (K4W2) on Apple Silicon and Intel Macs
+
+      2. **Requirements**
+         - macOS 11+ (Big Sur or newer)
+         - USB 3.0 port (Thunderbolt adapters work)
+         - Homebrew for dependencies
+
+      3. **Quick Install**
+         ```bash
+         # Install dependencies
+         brew install libusb glfw jpeg-turbo cmake
+         
+         # Build
+         git clone https://github.com/RESMP-DEV/libfreenect2.git
+         cd libfreenect2
+         mkdir build && cd build
+         cmake ..
+         make -j$(sysctl -n hw.ncpu)
+         sudo make install
+         ```
+
+      4. **Build Options**
+         - Metal (default on Apple Silicon)
+         - OpenCL (via Metal translation)
+         - OpenGL (legacy)
+         - CPU (fallback)
+
+      5. **Framework Installation**
+         ```bash
+         cmake .. -DBUILD_FRAMEWORK=ON
+         make
+         # Framework at build/lib/freenect2.framework
+         ```
+
+      6. **Troubleshooting**
+         - USB permissions (entitlements for signed apps)
+         - Multiple Kinects
+         - Apple Silicon specifics
+
+      7. **License** (Apache 2.0 / GPL 2.0)
+
+      Remove all Windows and Linux content.
+    priority: P3
+    verify_command: grep -q "macOS" contrib/kinect4metal/README.md
+
+  # ============================================================================
+  # MACOS INSTALL SCRIPT
+  # ============================================================================
+
+  - name: create-install-macos-script
+    prompt: |
+      Create `contrib/kinect4metal/depends/install_macos.sh`:
+
+      ```bash
+      #!/bin/bash
+      # Install kinect4metal dependencies on macOS
+
+      set -e
+
+      echo "=== kinect4metal macOS Dependency Installer ==="
+
+      # Check for Homebrew
+      if ! command -v brew &> /dev/null; then
+          echo "Homebrew not found. Installing..."
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      fi
+
+      echo "Installing dependencies via Homebrew..."
+      brew update
+      brew install libusb glfw jpeg-turbo cmake pkg-config
+
+      # Optional: OpenNI2
+      read -p "Install OpenNI2 support? (y/N) " -n 1 -r
+      echo
+      if [[ $REPLY =~ ^[Yy]$ ]]; then
+          brew install openni2
+          echo "export OPENNI2_REDIST=/opt/homebrew/lib/ni2" >> ~/.zshrc
+          echo "export OPENNI2_INCLUDE=/opt/homebrew/include/ni2" >> ~/.zshrc
+      fi
+
+      echo ""
+      echo "=== Dependencies installed! ==="
+      echo "Now build libfreenect2:"
+      echo "  mkdir build && cd build"
+      echo "  cmake .."
+      echo "  make -j\$(sysctl -n hw.ncpu)"
+      echo "  sudo make install"
+      ```
+
+      Make it executable: `chmod +x contrib/kinect4metal/depends/install_macos.sh`
+    priority: P3
+    verify_command: test -x contrib/kinect4metal/depends/install_macos.sh
+
+  # ============================================================================
+  # SWIFTUI EXAMPLE APP
+  # ============================================================================
+
+  - name: create-swift-example-dir
+    prompt: |
+      Create SwiftUI example app directory structure:
+
+      ```bash
+      mkdir -p contrib/kinect4metal/examples/SwiftUI/KinectViewer
+      mkdir -p contrib/kinect4metal/examples/SwiftUI/KinectViewer/Sources
+      ```
+    priority: P3
+    verify_command: test -d contrib/kinect4metal/examples/SwiftUI/KinectViewer
+
+  - name: swift-kinect-wrapper
+    prompt: |
+      Create `contrib/kinect4metal/examples/SwiftUI/KinectViewer/Sources/KinectWrapper.swift`:
+
+      A Swift wrapper around kinect4metal C++ API using C interop:
+
+      ```swift
+      import Foundation
+      import freenect2
+
+      @Observable
+      class KinectManager {
+          private var freenect2: OpaquePointer?
+          private var device: OpaquePointer?
+          
+          var isConnected: Bool = false
+          var colorFrame: CGImage?
+          var depthFrame: CGImage?
+          var serialNumber: String = ""
+          
+          func connect() async throws {
+              // Initialize freenect2
+              // Open device
+              // Start streams
+          }
+          
+          func disconnect() {
+              // Stop streams
+              // Close device
+          }
+      }
+      ```
+
+      Note: This requires creating a C bridging header or Swift Package wrapping the C++ library.
+      Consider using the C API wrapper approach for simplicity.
+    priority: P3
+    dependencies: [create-swift-example-dir]
+    verify_command: test -f contrib/kinect4metal/examples/SwiftUI/KinectViewer/Sources/KinectWrapper.swift
+
+  - name: swift-content-view
+    prompt: |
+      Create `contrib/kinect4metal/examples/SwiftUI/KinectViewer/Sources/ContentView.swift`:
+
+      ```swift
+      import SwiftUI
+
+      struct ContentView: View {
+          @State private var kinect = KinectManager()
+          
+          var body: some View {
+              VStack {
+                  HStack {
+                      if let colorFrame = kinect.colorFrame {
+                          Image(colorFrame, scale: 1.0, label: Text("Color"))
+                              .resizable()
+                              .aspectRatio(contentMode: .fit)
+                      } else {
+                          Rectangle()
+                              .fill(Color.gray)
+                              .overlay(Text("No Color Feed"))
+                      }
+                      
+                      if let depthFrame = kinect.depthFrame {
+                          Image(depthFrame, scale: 1.0, label: Text("Depth"))
+                              .resizable()
+                              .aspectRatio(contentMode: .fit)
+                      } else {
+                          Rectangle()
+                              .fill(Color.gray)
+                              .overlay(Text("No Depth Feed"))
+                      }
+                  }
+                  
+                  HStack {
+                      Button(kinect.isConnected ? "Disconnect" : "Connect") {
+                          Task {
+                              if kinect.isConnected {
+                                  kinect.disconnect()
+                              } else {
+                                  try? await kinect.connect()
+                              }
+                          }
+                      }
+                      .buttonStyle(.borderedProminent)
+                      
+                      Text("Serial: \(kinect.serialNumber)")
+                          .font(.caption)
+                  }
+                  .padding()
+              }
+              .frame(minWidth: 800, minHeight: 500)
+          }
+      }
+      ```
+    priority: P3
+    dependencies: [swift-kinect-wrapper]
+    verify_command: test -f contrib/kinect4metal/examples/SwiftUI/KinectViewer/Sources/ContentView.swift
+
+  # ============================================================================
+  # XCODE PROJECT GENERATION
+  # ============================================================================
+
+  - name: cmake-xcode-preset
+    prompt: |
+      Create `contrib/kinect4metal/CMakePresets.json` for easy Xcode project generation:
+
+      ```json
+      {
+        "version": 6,
+        "cmakeMinimumRequired": {
+          "major": 3,
+          "minor": 21,
+          "patch": 0
+        },
+        "configurePresets": [
+          {
+            "name": "macos-default",
+            "displayName": "macOS Default",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+              "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+              "BUILD_FRAMEWORK": "ON",
+              "ENABLE_METAL": "ON",
+              "ENABLE_OPENCL": "ON",
+              "ENABLE_OPENGL": "ON"
+            }
+          },
+          {
+            "name": "xcode",
+            "displayName": "Xcode",
+            "generator": "Xcode",
+            "binaryDir": "${sourceDir}/build-xcode",
+            "cacheVariables": {
+              "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+              "BUILD_FRAMEWORK": "ON",
+              "ENABLE_METAL": "ON"
+            }
+          },
+          {
+            "name": "debug",
+            "displayName": "Debug",
+            "generator": "Unix Makefiles",
+            "binaryDir": "${sourceDir}/build-debug",
+            "cacheVariables": {
+              "CMAKE_BUILD_TYPE": "Debug",
+              "ENABLE_METAL": "ON"
+            }
+          }
+        ],
+        "buildPresets": [
+          {
+            "name": "macos-default",
+            "configurePreset": "macos-default"
+          },
+          {
+            "name": "xcode-release",
+            "configurePreset": "xcode",
+            "configuration": "Release"
+          }
+        ]
+      }
+      ```
+    priority: P3
+    verify_command: test -f contrib/kinect4metal/CMakePresets.json
+
+  # ============================================================================
+  # API DOCUMENTATION
+  # ============================================================================
+
+  - name: update-doc-mainpage
+    prompt: |
+      Update `contrib/kinect4metal/doc/` documentation for macOS focus.
+
+      Check for Doxygen mainpage.dox or similar and update:
+      - Remove Windows/Linux installation instructions
+      - Add macOS-specific quick start
+      - Document Metal pipeline
+      - Add Apple Silicon notes
+
+      If no Doxygen config exists, consider creating one for API docs.
+    priority: P3
+    verify_command: ls contrib/kinect4metal/doc/
+
+  # ============================================================================
+  # TROUBLESHOOTING GUIDE
+  # ============================================================================
+
+  - name: create-troubleshooting-macos
+    prompt: |
+      Create `contrib/kinect4metal/doc/TROUBLESHOOTING_MACOS.md`:
+
+      ```markdown
+      # macOS Troubleshooting Guide
+
+      ## USB Issues
+
+      ### "failed to claim interface"
+
+      **Cause**: Another process has the USB device, or permissions issue.
+
+      **Solutions**:
+      1. Unplug and replug the Kinect
+      2. Kill any other Kinect applications
+      3. For signed apps, ensure USB entitlement is set
+
+      ### "max iso packet size too small"
+
+      **Cause**: USB controller bandwidth issue.
+
+      **Solutions**:
+      1. Plug directly into Mac (no hubs)
+      2. Use USB 3.0 port (not USB-C adapter unless Thunderbolt)
+      3. Disconnect other USB 3.0 devices
+
+      ## Apple Silicon (M1/M2/M3/M4)
+
+      ### OpenCL Warning Messages
+
+      **Info**: Apple deprecated OpenCL but it still works via Metal translation.
+
+      ### Metal Pipeline Recommended
+
+      For best performance on Apple Silicon, use Metal pipeline:
+      ```bash
+      ./Protonect metal
+      # or set environment variable
+      export LIBFREENECT2_PIPELINE=metal
+      ```
+
+      ## Multiple Kinects
+
+      macOS handles multiple Kinects well, but:
+      - Each needs dedicated USB 3.0 bandwidth
+      - Use separate USB controllers if possible
+      - Thunderbolt docks with multiple USB 3.0 work well
+
+      ## Debugging
+
+      Enable libusb debug output:
+      ```bash
+      export LIBUSB_DEBUG=3
+      ./Protonect
+      ```
+
+      Enable kinect4metal debug logging:
+      ```bash
+      export LOGFILE=freenect2.log
+      ./Protonect
+      ```
+      ```
+    priority: P3
+    verify_command: test -f contrib/kinect4metal/doc/TROUBLESHOOTING_MACOS.md

@@ -6,23 +6,18 @@ SET(PROJECT_VER_PATCH 1)
 SET(PROJECT_VER "${PROJECT_VER_MAJOR}.${PROJECT_VER_MINOR}.${PROJECT_VER_PATCH}")
 SET(PROJECT_APIVER "${PROJECT_VER_MAJOR}.${PROJECT_VER_MINOR}")
 
-if(WIN32 AND NOT MINGW)
-  if(NOT DEFINED CMAKE_DEBUG_POSTFIX)
-    set(CMAKE_DEBUG_POSTFIX "d")
-  endif()
-endif()
-
-IF(WIN32)
-  # no permission for the default install prefix %ProgramFiles%
-  SET(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE STRING "installation path")
-ENDIF()
-
 IF(NOT DEFINED CMAKE_BUILD_TYPE)
-  # No effect for multi-configuration generators (e.g. for Visual Studio)
+  # No effect for multi-configuration generators.
   SET(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose: RelWithDebInfo Release Debug MinSizeRel None")
 ENDIF()
 
 PROJECT(libfreenect2)
+
+# Apple Silicon support
+IF(APPLE)
+  SET(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build architectures")
+  SET(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+ENDIF()
 
 # Modern CMake policies
 cmake_policy(SET CMP0042 NEW)  # MACOSX_RPATH enabled by default
@@ -36,8 +31,7 @@ OPTION(BUILD_OPENNI2_DRIVER "Build OpenNI2 driver" ON)
 OPTION(ENABLE_OPENCL "Enable OpenCL support" ON)
 OPTION(ENABLE_CUDA "Enable CUDA support" ON)
 OPTION(ENABLE_OPENGL "Enable OpenGL support" ON)
-OPTION(ENABLE_VAAPI "Enable VA-API support" ON)
-OPTION(ENABLE_TEGRAJPEG "Enable Tegra HW JPEG support" ON)
+OPTION(ENABLE_METAL "Enable Metal compute support" ON)
 OPTION(ENABLE_PROFILING "Collect profiling stats (memory consuming)" OFF)
 
 IF(ENABLE_PROFILING)
@@ -48,20 +42,19 @@ ENDIF()
 SET(CMAKE_CXX_STANDARD 17)
 SET(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(CMAKE_CXX_EXTENSIONS OFF)
+IF(APPLE)
+  # Ensure arm64 builds when not explicitly building a universal binary.
+  IF(NOT CMAKE_OSX_ARCHITECTURES MATCHES "arm64" OR NOT CMAKE_OSX_ARCHITECTURES MATCHES "x86_64")
+    SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch arm64")
+  ENDIF()
+ENDIF()
 SET(LIBFREENECT2_WITH_CXX11_SUPPORT 1)
 SET(HAVE_CXX11 yes)
 # Also set flags for checks in threading setup
 SET(COMPILER_SUPPORTS_CXX11 ON)
 
-IF(MSVC)
-  # suppress several "possible loss of data" warnings, and
-  # "zero-length array in struct" from libusb.h
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4267 /wd4244 /wd4200 /wd4305 /wd4146")
-  ADD_DEFINITIONS(-D_CRT_SECURE_NO_WARNINGS) # no warning for getenv()
-ELSE()
-  # Heed warnings from non-MSVC compilers
-  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
-ENDIF()
+# macOS-focused compiler warnings.
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
 
 # additional cmake modules
 LIST(APPEND CMAKE_MODULE_PATH ${MY_DIR}/cmake_modules)
@@ -79,7 +72,6 @@ SET(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 SET(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
 
 # dependencies
-FIND_PACKAGE(PkgConfig)    # try find PKGConfig as it will be used if found
 FIND_PACKAGE(LibUSB REQUIRED)
 
 # Add includes
@@ -180,55 +172,10 @@ IF(APPLE)
   ENDIF(VIDEOTOOLBOX_LIBRARY)
 ENDIF(APPLE)
 
-SET(HAVE_VAAPI disabled)
-IF(ENABLE_VAAPI)
-  IF(PKG_CONFIG_FOUND)
-    PKG_CHECK_MODULES(VAAPI libva libva-drm)
-  ENDIF()
-  FIND_PACKAGE(JPEG)
-
-  SET(HAVE_VAAPI no)
-  IF(VAAPI_FOUND AND JPEG_FOUND)
-    SET(LIBFREENECT2_WITH_VAAPI_SUPPORT 1)
-    SET(HAVE_VAAPI yes)
-
-    INCLUDE_DIRECTORIES(${VAAPI_INCLUDE_DIRS})
-
-    LIST(APPEND SOURCES
-      src/vaapi_rgb_packet_processor.cpp
-    )
-    LIST(APPEND LIBRARIES
-      ${VAAPI_LIBRARIES}
-      ${JPEG_LIBRARY}
-    )
-  ENDIF()
-ENDIF(ENABLE_VAAPI)
-
-SET(HAVE_TegraJPEG disabled)
-IF(ENABLE_TEGRAJPEG)
-  FIND_PACKAGE(TegraJPEG)
-
-  SET(HAVE_TegraJPEG no)
-  IF(TegraJPEG_FOUND)
-    SET(LIBFREENECT2_WITH_TEGRAJPEG_SUPPORT 1)
-    SET(HAVE_TegraJPEG yes)
-
-    INCLUDE_DIRECTORIES(${TegraJPEG_INCLUDE_DIRS})
-
-    LIST(APPEND SOURCES
-      src/tegra_jpeg_rgb_packet_processor.cpp
-    )
-
-    LIST(APPEND LIBRARIES
-      ${CMAKE_DL_LIBS}
-    )
-  ENDIF()
-ENDIF()
-
 IF(LIBFREENECT2_WITH_VT_SUPPORT)
   FIND_PACKAGE(TurboJPEG)
 ELSE()
-  # VAAPI can fail to start at runtime. It must have a fallback.
+  # VideoToolbox is preferred on macOS; TurboJPEG remains the required fallback.
   FIND_PACKAGE(TurboJPEG REQUIRED)
 ENDIF()
 
@@ -293,14 +240,13 @@ IF(ENABLE_OPENCL)
     SET(LIBFREENECT2_WITH_OPENCL_SUPPORT 1)
     SET(HAVE_OpenCL yes)
 
-    IF(UNIX AND NOT APPLE)
-      INCLUDE(CheckOpenCLICDLoader)
-      IF(OpenCL_C_WORKS AND NOT OpenCL_CXX_WORKS)
-        SET(LIBFREENECT2_OPENCL_ICD_LOADER_IS_OLD 1)
-        SET(HAVE_OpenCL "yes (legacy ICD loader)")
-        MESSAGE(WARNING "Your libOpenCL.so may be incompatible with CL/cl.h. Consider installing ocl-icd-opencl-dev for better compatibility.")
-      ENDIF()
-    ENDIF()
+    IF(APPLE)
+      # Prefer Apple's OpenCL.framework headers from the SDK.
+      # Keep bundled include/internal/CL/cl.hpp as a compatibility fallback.
+      SET(OpenCL_INCLUDE_DIR "")
+      SET(OpenCL_INCLUDE_DIRS "")
+    ENDIF(APPLE)
+
     INCLUDE_DIRECTORIES(${OpenCL_INCLUDE_DIRS})
 
     LIST(APPEND SOURCES
@@ -316,13 +262,55 @@ IF(ENABLE_OPENCL)
       src/opencl_depth_packet_processor.cl
       src/opencl_kde_depth_packet_processor.cl
     )
-
-    # Note: The -fno-exceptions workaround for buggy OpenCL ICD loaders is no longer
-    # needed on modern Linux distributions (Ubuntu 18.04+, etc.) with ocl-icd.
-    # If you encounter OpenCL issues on older systems, you may need to add:
-    # SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-exceptions")
   ENDIF(OpenCL_FOUND)
 ENDIF(ENABLE_OPENCL)
+
+SET(HAVE_Metal disabled)
+IF(ENABLE_METAL AND APPLE)
+  FIND_LIBRARY(METAL_LIBRARY Metal)
+  FIND_LIBRARY(METALKIT_LIBRARY MetalKit)
+  
+  SET(HAVE_Metal no)
+  IF(METAL_LIBRARY AND METALKIT_LIBRARY)
+    SET(LIBFREENECT2_WITH_METAL_SUPPORT 1)
+    SET(HAVE_Metal yes)
+    
+    LIST(APPEND SOURCES
+      src/metal_depth_packet_processor.mm
+      src/metal_depth_packet_processor.cpp
+    )
+    
+    LIST(APPEND LIBRARIES
+      ${METAL_LIBRARY}
+      ${METALKIT_LIBRARY}
+    )
+    
+    # Compile Metal shaders
+    SET(METAL_SHADER_SOURCE ${MY_DIR}/src/metal/depth_processing.metal)
+    SET(METAL_SHADER_AIR ${PROJECT_BINARY_DIR}/depth_processing.air)
+    SET(METAL_SHADER_LIB ${PROJECT_BINARY_DIR}/depth_processing.metallib)
+    
+    ADD_CUSTOM_COMMAND(
+      OUTPUT ${METAL_SHADER_AIR}
+      COMMAND xcrun -sdk macosx metal -c ${METAL_SHADER_SOURCE} -o ${METAL_SHADER_AIR}
+      DEPENDS ${METAL_SHADER_SOURCE}
+      COMMENT "Compiling Metal shader to AIR"
+    )
+    
+    ADD_CUSTOM_COMMAND(
+      OUTPUT ${METAL_SHADER_LIB}
+      COMMAND xcrun -sdk macosx metallib ${METAL_SHADER_AIR} -o ${METAL_SHADER_LIB}
+      DEPENDS ${METAL_SHADER_AIR}
+      COMMENT "Linking Metal shader library"
+    )
+    
+    ADD_CUSTOM_TARGET(MetalShaders DEPENDS ${METAL_SHADER_LIB})
+    ADD_DEPENDENCIES(freenect2 MetalShaders)
+    
+    INSTALL(FILES ${METAL_SHADER_LIB} DESTINATION lib)
+  ENDIF(METAL_LIBRARY AND METALKIT_LIBRARY)
+ENDIF(ENABLE_METAL AND APPLE)
+
 
 SET(HAVE_CUDA disabled)
 IF(ENABLE_CUDA)
@@ -344,9 +332,7 @@ IF(ENABLE_CUDA)
         "${NVCUDASAMPLES_ROOT}/common/inc"
       )
       SET(CUDA_FLAGS -use_fast_math)
-      IF(NOT MSVC)
-        SET(CUDA_FLAGS "${CUDA_FLAGS} -Xcompiler -fPIC")
-      ENDIF()
+      SET(CUDA_FLAGS "${CUDA_FLAGS} -Xcompiler -fPIC")
       # Use C++17 for CUDA (CUDA 10.0+ supports C++14, CUDA 12.0+ fully supports C++17)
       IF(CUDA_VERSION VERSION_GREATER_EQUAL 12.0)
         SET(CUDA_FLAGS "${CUDA_FLAGS} -std=c++17")
@@ -370,18 +356,8 @@ IF(ENABLE_CUDA)
         ${CUDA_LIBRARIES}
       )
     ENDIF()
-  ENDIF()
+  ENDIF(CUDA_FOUND)
 ENDIF(ENABLE_CUDA)
-
-# RPATH handling for CUDA 8.0 libOpenCL.so conflict. See #804.
-IF(HAVE_OpenCL STREQUAL yes AND UNIX AND NOT APPLE)
-  FILE(GLOB CUDA_ld_so_conf /etc/ld.so.conf.d/cuda*.conf)
-  IF(CUDA_ld_so_conf)
-    MESSAGE(WARNING "Your CUDA installation overrides OpenCL system library path.")
-    GET_FILENAME_COMPONENT(OpenCL_LIB_PATH ${OpenCL_LIBRARY} DIRECTORY)
-    SET(CMAKE_INSTALL_RPATH ${OpenCL_LIB_PATH} CACHE STRING "Set RPATH for system OpenCL")
-  ENDIF()
-ENDIF()
 
 # RPATH handling for private libusb copies
 # Users have two options:
@@ -412,16 +388,25 @@ SET_TARGET_PROPERTIES(freenect2 PROPERTIES
   VERSION ${PROJECT_VER}
   SOVERSION ${PROJECT_APIVER}
 )
+IF(APPLE)
+  OPTION(BUILD_FRAMEWORK "Build as macOS Framework" ON)
+  IF(BUILD_FRAMEWORK)
+    SET_TARGET_PROPERTIES(freenect2 PROPERTIES
+      FRAMEWORK TRUE
+      FRAMEWORK_VERSION A
+      MACOSX_FRAMEWORK_IDENTIFIER org.openkinect.libfreenect2
+      MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${PROJECT_VER}
+      MACOSX_FRAMEWORK_BUNDLE_VERSION ${PROJECT_VER}
+      PUBLIC_HEADER "${MY_DIR}/include/libfreenect2/libfreenect2.hpp;${MY_DIR}/include/libfreenect2/frame_listener.hpp;${MY_DIR}/include/libfreenect2/frame_listener_impl.h;${MY_DIR}/include/libfreenect2/packet_pipeline.h;${MY_DIR}/include/libfreenect2/registration.h;${MY_DIR}/include/libfreenect2/logger.h;${MY_DIR}/include/libfreenect2/config.h;${PROJECT_BINARY_DIR}/libfreenect2/config.h;${PROJECT_BINARY_DIR}/libfreenect2/export.h"
+    )
+  ENDIF()
+ENDIF()
 INCLUDE(GenerateExportHeader)
 GENERATE_EXPORT_HEADER(freenect2
   BASE_NAME libfreenect2
   EXPORT_FILE_NAME libfreenect2/export.h
 )
 
-IF(MSVC AND NOT BUILD_SHARED_LIBS)
-  # MSVC creates freenect2.lib for both dynamic and static by default
-  set_target_properties(freenect2 PROPERTIES SUFFIX "static.lib")
-ENDIF()
 STRING(REPLACE ";" "\n " LIBRARIES_STRING "${LIBRARIES}")
 MESSAGE(STATUS "Linking with these libraries: \n ${LIBRARIES_STRING}")
 TARGET_LINK_LIBRARIES(freenect2 ${LIBRARIES})
@@ -475,6 +460,11 @@ IF(BUILD_STREAMER_RECORDER)
   SET(HAVE_streamer_recorder yes)
   MESSAGE(STATUS "Configurating streamer_recorder")
   ADD_SUBDIRECTORY(${MY_DIR}/tools/streamer_recorder)
+ENDIF()
+
+# Tests
+IF(EXISTS "${MY_DIR}/tests/CMakeLists.txt")
+  ADD_SUBDIRECTORY(tests)
 ENDIF()
 
 GET_CMAKE_PROPERTY(vars VARIABLES)

@@ -6,10 +6,15 @@
 # GLFW3_INCLUDE_DIRS
 # GLFW3_LIBRARIES
 
+# Homebrew paths for macOS
+IF(APPLE)
+  LIST(APPEND CMAKE_PREFIX_PATH "/opt/homebrew" "/usr/local")
+ENDIF()
+
 IF(PKG_CONFIG_FOUND)
   IF(APPLE)
     # homebrew or macports pkgconfig locations
-    SET(ENV{PKG_CONFIG_PATH} "/usr/local/opt/glfw3/lib/pkgconfig:/opt/local/lib/pkgconfig")
+    SET(ENV{PKG_CONFIG_PATH} "/opt/homebrew/opt/glfw/lib/pkgconfig:/opt/homebrew/opt/glfw3/lib/pkgconfig:/opt/homebrew/lib/pkgconfig:/usr/local/opt/glfw/lib/pkgconfig:/usr/local/opt/glfw3/lib/pkgconfig:/usr/local/lib/pkgconfig:/opt/local/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
   ENDIF()
   SET(ENV{PKG_CONFIG_PATH} "${DEPENDS_DIR}/glfw/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
   PKG_CHECK_MODULES(GLFW3 glfw3)

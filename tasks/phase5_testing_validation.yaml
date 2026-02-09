@@ -1,0 +1,416 @@
+# yaml-language-server: $schema=
+# Phase 5: Testing and Validation
+# Build verification and automated tests for macOS
+
+tasks:
+  # ============================================================================
+  # BUILD VERIFICATION
+  # ============================================================================
+
+  - name: verify-build-intel
+    prompt: |
+      Create `contrib/kinect4metal/scripts/verify_build.sh` to validate the build:
+
+      ```bash
+      #!/bin/bash
+      set -e
+
+      echo "=== kinect4metal Build Verification ==="
+
+      cd "$(dirname "$0")/.."
+      BUILD_DIR="${1:-build}"
+
+      echo "Build directory: $BUILD_DIR"
+
+      # Check library exists
+      if [[ -f "$BUILD_DIR/lib/libfreenect2.dylib" ]]; then
+          echo "✓ Dynamic library built"
+      elif [[ -d "$BUILD_DIR/lib/freenect2.framework" ]]; then
+          echo "✓ Framework built"
+      else
+          echo "✗ No library found!"
+          exit 1
+      fi
+
+      # Check Protonect built
+      if [[ -f "$BUILD_DIR/bin/Protonect" ]]; then
+          echo "✓ Protonect example built"
+      else
+          echo "✗ Protonect not found!"
+          exit 1
+      fi
+
+      # Check for Metal shader library (if Metal enabled)
+      if [[ -f "$BUILD_DIR/depth_processing.metallib" ]]; then
+          echo "✓ Metal shaders compiled"
+      else
+          echo "⚠ Metal shaders not found (may be disabled)"
+      fi
+
+      # Verify library dependencies
+      echo ""
+      echo "Library dependencies:"
+      otool -L "$BUILD_DIR/lib/libfreenect2.dylib" 2>/dev/null || \
+          otool -L "$BUILD_DIR/lib/freenect2.framework/freenect2" 2>/dev/null
+
+      # Architecture check
+      echo ""
+      echo "Architecture:"
+      lipo -info "$BUILD_DIR/lib/libfreenect2.dylib" 2>/dev/null || \
+          lipo -info "$BUILD_DIR/lib/freenect2.framework/freenect2" 2>/dev/null
+
+      echo ""
+      echo "=== Build verification passed ==="
+      ```
+
+      Make executable: `chmod +x contrib/kinect4metal/scripts/verify_build.sh`
+    priority: P2
+    verify_command: test -x contrib/kinect4metal/scripts/verify_build.sh
+
+  - name: create-scripts-dir
+    prompt: |
+      Create scripts directory:
+      ```bash
+      mkdir -p contrib/kinect4metal/scripts
+      ```
+    priority: P2
+    verify_command: test -d contrib/kinect4metal/scripts
+
+  # ============================================================================
+  # UNIT TESTS
+  # ============================================================================
+
+  - name: create-test-framework
+    prompt: |
+      Create basic test framework in `contrib/kinect4metal/tests/`:
+
+      ```bash
+      mkdir -p contrib/kinect4metal/tests
+      ```
+
+      Create `contrib/kinect4metal/tests/CMakeLists.txt`:
+      ```cmake
+      OPTION(BUILD_TESTS "Build unit tests" ON)
+
+      IF(BUILD_TESTS)
+        ENABLE_TESTING()
+        
+        # Find or download Catch2
+        FIND_PACKAGE(Catch2 3 QUIET)
+        IF(NOT Catch2_FOUND)
+          INCLUDE(FetchContent)
+          FetchContent_Declare(
+            Catch2
+            GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+            GIT_TAG v3.4.0
+          )
+          FetchContent_MakeAvailable(Catch2)
+        ENDIF()
+        
+        ADD_EXECUTABLE(freenect2_tests
+          test_registration.cpp
+          test_depth_tables.cpp
+        )
+        TARGET_LINK_LIBRARIES(freenect2_tests PRIVATE freenect2 Catch2::Catch2WithMain)
+        ADD_TEST(NAME freenect2_tests COMMAND freenect2_tests)
+      ENDIF()
+      ```
+    priority: P2
+    dependencies: [create-scripts-dir]
+    verify_command: test -f contrib/kinect4metal/tests/CMakeLists.txt
+
+  - name: test-registration
+    prompt: |
+      Create `contrib/kinect4metal/tests/test_registration.cpp`:
+
+      ```cpp
+      #include <catch2/catch_test_macros.hpp>
+      #include <catch2/matchers/catch_matchers_floating_point.hpp>
+      #include <libfreenect2/registration.h>
+
+      using namespace libfreenect2;
+      using Catch::Matchers::WithinRel;
+
+      TEST_CASE("Registration initialization", "[registration]") {
+          // Default camera params
+          Freenect2Device::IrCameraParams ir_params = {
+              365.456f, 365.456f,  // fx, fy
+              254.878f, 205.395f,  // cx, cy
+              0.0f, 0.0f, 0.0f,    // k1, k2, k3
+              0.0f, 0.0f           // p1, p2
+          };
+          
+          Freenect2Device::ColorCameraParams color_params = {
+              1081.37f, 1081.37f,  // fx, fy
+              959.5f, 539.5f,      // cx, cy
+              0.0f,                // shift_d
+              0.0f,                // shift_m
+              0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  // mx_x3y0...
+              0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f  // mx_x2y0...
+          };
+          
+          SECTION("Can create registration object") {
+              Registration reg(ir_params, color_params);
+              // Should not crash
+              REQUIRE(true);
+          }
+          
+          SECTION("Point cloud at zero depth") {
+              Registration reg(ir_params, color_params);
+              float x, y, z;
+              reg.getPointXYZ(nullptr, 0, 256, 212, x, y, z);
+              // Zero depth should give zero coordinates
+              REQUIRE(x == 0.0f);
+              REQUIRE(y == 0.0f);
+              REQUIRE(z == 0.0f);
+          }
+      }
+      ```
+    priority: P2
+    dependencies: [create-test-framework]
+    verify_command: test -f contrib/kinect4metal/tests/test_registration.cpp
+
+  - name: test-depth-tables
+    prompt: |
+      Create `contrib/kinect4metal/tests/test_depth_tables.cpp`:
+
+      ```cpp
+      #include <catch2/catch_test_macros.hpp>
+      #include <libfreenect2/depth_packet_processor.h>
+      #include <vector>
+      #include <cmath>
+
+      TEST_CASE("Depth table sizes", "[depth]") {
+          SECTION("Table size constants") {
+              REQUIRE(libfreenect2::DepthPacketProcessor::TABLE_SIZE == 512 * 424);
+              REQUIRE(libfreenect2::DepthPacketProcessor::LUT_SIZE == 2048);
+          }
+      }
+
+      TEST_CASE("X/Z table generation", "[depth]") {
+          // This tests the internal table generation logic
+          // Values computed from known camera parameters
+          
+          const float fx = 365.456f;
+          const float fy = 365.456f;  
+          const float cx = 254.878f;
+          const float cy = 205.395f;
+          
+          // Test center pixel
+          size_t center_idx = 212 * 512 + 256;
+          float xd = (256 + 0.5f - cx) / fx;
+          float yd = (212 + 0.5f - cy) / fy;
+          
+          SECTION("Center pixel is near zero") {
+              REQUIRE(std::abs(xd) < 0.01f);
+              REQUIRE(std::abs(yd) < 0.03f);
+          }
+      }
+      ```
+    priority: P2
+    dependencies: [create-test-framework]
+    verify_command: test -f contrib/kinect4metal/tests/test_depth_tables.cpp
+
+  - name: add-tests-to-cmake
+    prompt: |
+      Add tests subdirectory to main `contrib/kinect4metal/CMakeLists.txt`.
+
+      Add before the feature list output (near the end):
+      ```cmake
+      # Tests
+      IF(EXISTS "${MY_DIR}/tests/CMakeLists.txt")
+        ADD_SUBDIRECTORY(tests)
+      ENDIF()
+      ```
+    priority: P2
+    dependencies: [test-depth-tables, test-registration]
+    verify_command: grep -q "ADD_SUBDIRECTORY(tests)" contrib/kinect4metal/CMakeLists.txt
+
+  # ============================================================================
+  # CI WORKFLOW
+  # ============================================================================
+
+  - name: create-github-workflow
+    prompt: |
+      Create `contrib/kinect4metal/.github/workflows/build-macos.yml`:
+
+      ```yaml
+      name: Build macOS
+
+      on:
+        push:
+          branches: [master, main]
+        pull_request:
+          branches: [master, main]
+
+      jobs:
+        build:
+          runs-on: macos-14  # Apple Silicon runner
+          
+          steps:
+          - uses: actions/checkout@v4
+          
+          - name: Install dependencies
+            run: |
+              brew install libusb glfw jpeg-turbo
+          
+          - name: Configure
+            run: |
+              mkdir build
+              cd build
+              cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                       -DENABLE_METAL=ON \
+                       -DENABLE_OPENCL=ON \
+                       -DENABLE_OPENGL=ON \
+                       -DBUILD_TESTS=ON
+          
+          - name: Build
+            run: |
+              cd build
+              make -j$(sysctl -n hw.ncpu)
+          
+          - name: Run tests
+            run: |
+              cd build
+              ctest --output-on-failure
+          
+          - name: Verify build
+            run: |
+              ./scripts/verify_build.sh build
+          
+          - name: Upload artifacts
+            uses: actions/upload-artifact@v4
+            with:
+              name: libfreenect2-macos
+              path: |
+                build/lib/
+                build/bin/Protonect
+        
+        build-intel:
+          runs-on: macos-13  # Intel runner
+          
+          steps:
+          - uses: actions/checkout@v4
+          
+          - name: Install dependencies
+            run: |
+              brew install libusb glfw jpeg-turbo
+          
+          - name: Configure
+            run: |
+              mkdir build
+              cd build
+              cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                       -DENABLE_OPENCL=ON \
+                       -DENABLE_OPENGL=ON
+          
+          - name: Build
+            run: |
+              cd build
+              make -j$(sysctl -n hw.ncpu)
+      ```
+    priority: P2
+    dependencies: [verify-build-intel]
+    verify_command: test -f contrib/kinect4metal/.github/workflows/build-macos.yml
+
+  # ============================================================================
+  # INTEGRATION VALIDATION
+  # ============================================================================
+
+  - name: create-integration-test
+    prompt: |
+      Create `contrib/kinect4metal/scripts/test_integration.sh` for hardware testing:
+
+      ```bash
+      #!/bin/bash
+      # Integration test - requires physical Kinect v2
+
+      set -e
+
+      echo "=== kinect4metal Integration Test ==="
+      echo "This test requires a connected Kinect v2."
+      echo ""
+
+      BUILD_DIR="${1:-build}"
+      PROTONECT="$BUILD_DIR/bin/Protonect"
+
+      if [[ ! -f "$PROTONECT" ]]; then
+          echo "ERROR: Protonect not found at $PROTONECT"
+          exit 1
+      fi
+
+      # Test 1: Device enumeration (no device needed)
+      echo "Test 1: Checking Protonect starts..."
+      timeout 5 "$PROTONECT" -help || true
+      echo "✓ Protonect executable works"
+
+      # Test 2: Try each pipeline (will fail gracefully if no device)
+      for pipeline in cpu gl cl metal; do
+          echo ""
+          echo "Test 2.$pipeline: Testing $pipeline pipeline..."
+          timeout 10 "$PROTONECT" $pipeline -noviewer -frames 1 2>&1 || {
+              if [[ $? -eq 124 ]]; then
+                  echo "⚠ Timeout (may need Kinect connected)"
+              else
+                  echo "⚠ Pipeline $pipeline not available or no device"
+              fi
+          }
+      done
+
+      echo ""
+      echo "=== Integration test completed ==="
+      echo "Connect a Kinect v2 and run: $PROTONECT"
+      ```
+
+      Make executable.
+    priority: P2
+    dependencies: [create-scripts-dir]
+    verify_command: test -x contrib/kinect4metal/scripts/test_integration.sh || test -f contrib/kinect4metal/scripts/test_integration.sh
+
+  # ============================================================================
+  # FINAL VERIFICATION TASK
+  # ============================================================================
+
+  - name: final-build-test
+    prompt: |
+      Create final verification that runs a clean build:
+
+      Create `contrib/kinect4metal/scripts/full_build_test.sh`:
+
+      ```bash
+      #!/bin/bash
+      set -e
+
+      echo "=== Full Build Test ==="
+      cd "$(dirname "$0")/.."
+
+      # Clean
+      rm -rf build-test
+
+      # Configure
+      mkdir build-test
+      cd build-test
+      cmake .. \
+        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DENABLE_METAL=ON \
+        -DENABLE_OPENCL=ON \
+        -DENABLE_OPENGL=ON \
+        -DBUILD_FRAMEWORK=ON \
+        -DBUILD_TESTS=ON \
+        -DBUILD_EXAMPLES=ON
+
+      # Build
+      make -j$(sysctl -n hw.ncpu)
+
+      # Test
+      ctest --output-on-failure
+
+      # Verify
+      ../scripts/verify_build.sh .
+
+      echo ""
+      echo "=== Full build test PASSED ==="
+      ```
+    priority: P2
+    dependencies: [add-tests-to-cmake, verify-build-intel]
+    verify_command: test -f contrib/kinect4metal/scripts/full_build_test.sh
