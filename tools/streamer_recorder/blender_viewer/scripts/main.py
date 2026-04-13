@@ -24,21 +24,24 @@
 # either License.
 #
 
-from bge import (
-        logic,
-        texture,
-        )
-
 import socket
-import bgl
 
 # add cv2 lib (requires numpy higher version than current in blender)
 import sys
+
+import bgl
+from bge import (
+    logic,
+    texture,
+)
+
 sys.path.append('/usr/local/Cellar/python3/3.4.3/Frameworks/Python.framework/Versions/3.4/lib/python3.4/site-packages')
-import numpy
-import cv2
 # from PIL import Image
 import itertools
+
+import cv2
+import numpy
+
 
 def init(controller):
     """
@@ -63,7 +66,7 @@ def init(controller):
         host = '127.0.0.1'
         port_rcv = 10000
         logic.socket.bind((host,port_rcv))
-        print('bind socket: IP = {} Port = {}'.format(host, port_rcv))
+        print(f'bind socket: IP = {host} Port = {port_rcv}')
 
         controller.owner['SocketConnected'] = True
 
@@ -100,7 +103,7 @@ def run(controller):
                 frame = cv2.imdecode(numpy.fromstring(frame_raw, dtype=numpy.uint8), cv2.IMREAD_GRAYSCALE)
 
 
-                if not frame is None:
+                if frame is not None:
 
                     width = frame.shape[1]
                     height = frame.shape[0]
@@ -120,7 +123,7 @@ def run(controller):
                     logic.texture.source = source
                     logic.texture.refresh(False)
 
-        except socket.timeout:
+        except TimeoutError:
             pass
 
 def end(controller):
