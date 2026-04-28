@@ -48,3 +48,7 @@ For most changes:
 - build the affected targets,
 - run the relevant tests,
 - and verify example or validation scripts if the touched code affects device IO, decoding, or depth processing.
+
+## Change log expectations
+
+Update `CHANGELOG.md` when a change affects build steps, device behavior, Metal implementation details, or validation guidance. Summaries should explain the operator-facing effect rather than reproduce commit-by-commit history.
